@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}StockAnalyzer{% endblock %}</title>
+
+  <!-- Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
+          colors: {
+            surface: '#0F172A',
+            card:    '#1E293B',
+            border:  '#334155',
+            buy:     '#22C55E',
+            watch:   '#F59E0B',
+            danger:  '#EF4444',
+            muted:   '#94A3B8',
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- ApexCharts -->
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.49.0/dist/apexcharts.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      background-color: #020617;
+      color: #F8FAFC;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0F172A; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    /* Form inputs */
+    .form-input {
+      display: block;
+      width: 100%;
+      padding: 0.65rem 1rem;
+      background: #0F172A;
+      border: 1px solid #334155;
+      border-radius: 0.5rem;
+      color: #F8FAFC;
+      font-size: 0.9rem;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      transition: border-color 200ms, box-shadow 200ms;
+      outline: none;
+    }
+    .form-input:focus {
+      border-color: #22C55E;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+    }
+    .form-input::placeholder { color: #475569; }
+
+    /* Signal badges */
+    .badge-buy   { background: rgba(34,197,94,0.15);  color: #22C55E; border: 1px solid rgba(34,197,94,0.3); }
+    .badge-watch { background: rgba(245,158,11,0.15); color: #F59E0B; border: 1px solid rgba(245,158,11,0.3); }
+    .badge-no-buy { background: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid rgba(239,68,68,0.3); }
+
+    /* Glow effects */
+    .glow-buy   { text-shadow: 0 0 12px rgba(34,197,94,0.6); }
+    .glow-watch { text-shadow: 0 0 12px rgba(245,158,11,0.6); }
+    .glow-danger{ text-shadow: 0 0 12px rgba(239,68,68,0.6); }
+
+    /* Card */
+    .card {
+      background: #1E293B;
+      border: 1px solid #334155;
+      border-radius: 0.75rem;
+    }
+
+    /* Btn primary */
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.55rem 1.2rem;
+      background: #22C55E;
+      color: #020617;
+      font-weight: 700;
+      font-size: 0.875rem;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      transition: background 200ms, transform 100ms;
+    }
+    .btn-primary:hover { background: #16A34A; }
+    .btn-primary:active { transform: scale(0.97); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.55rem 1.2rem;
+      background: transparent;
+      color: #94A3B8;
+      font-weight: 600;
+      font-size: 0.875rem;
+      border-radius: 0.5rem;
+      border: 1px solid #334155;
+      cursor: pointer;
+      transition: border-color 200ms, color 200ms;
+    }
+    .btn-ghost:hover { border-color: #64748B; color: #F8FAFC; }
+
+    .btn-danger {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 0.9rem;
+      background: transparent;
+      color: #EF4444;
+      font-weight: 600;
+      font-size: 0.8rem;
+      border-radius: 0.5rem;
+      border: 1px solid rgba(239,68,68,0.35);
+      cursor: pointer;
+      transition: background 200ms;
+    }
+    .btn-danger:hover { background: rgba(239,68,68,0.1); }
+
+    /* Skeleton loader */
+    .skeleton {
+      background: linear-gradient(90deg, #1E293B 25%, #334155 50%, #1E293B 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 0.4rem;
+    }
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+
+    /* Nav active indicator */
+    .nav-link { color: #94A3B8; transition: color 200ms; }
+    .nav-link:hover { color: #F8FAFC; }
+    .nav-link.active { color: #22C55E; }
+
+    /* Table row hover */
+    .table-row:hover { background: rgba(255,255,255,0.03); }
+
+    /* Toast messages */
+    .msg-success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #22C55E; }
+    .msg-error   { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #EF4444; }
+    .msg-info    { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); color: #60A5FA; }
+    .msg-warning { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: #F59E0B; }
+  </style>
+
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body>
+
+<!-- Navbar -->
+{% if user.is_authenticated %}
+<nav class="fixed top-3 left-4 right-4 z-50 card flex items-center justify-between px-5 py-3"
+     style="backdrop-filter: blur(12px); background: rgba(30,41,59,0.85);">
+
+  <!-- Logo -->
+  <a href="{% url 'dashboard' %}" class="flex items-center gap-2 cursor-pointer">
+    <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.3);">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" aria-hidden="true">
+        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+        <polyline points="16 7 22 7 22 13"/>
+      </svg>
+    </div>
+    <span class="font-bold text-base tracking-tight text-white">Stock<span style="color:#22C55E">Analyzer</span></span>
+  </a>
+
+  <!-- Nav links -->
+  <div class="hidden sm:flex items-center gap-6 text-sm font-medium">
+    <a href="{% url 'dashboard' %}" class="nav-link flex items-center gap-1.5">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
+      Dashboard
+    </a>
+  </div>
+
+  <!-- Right: user + logout -->
+  <div class="flex items-center gap-3">
+    <div class="hidden sm:flex items-center gap-2 text-sm text-muted">
+      <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+           style="background: rgba(34,197,94,0.2); color: #22C55E; border: 1px solid rgba(34,197,94,0.3);">
+        {{ user.username|first|upper }}
+      </div>
+      <span>{{ user.username }}</span>
+    </div>
+    <a href="{% url 'logout' %}" class="btn-ghost text-xs px-3 py-2">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+      </svg>
+      Logout
+    </a>
+  </div>
+</nav>
+<div class="h-20"></div>
+{% endif %}
+
+<!-- Flash messages -->
+{% if messages %}
+<div class="max-w-6xl mx-auto px-4 mb-4 space-y-2">
+  {% for message in messages %}
+    <div role="alert" class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium
+         {% if message.tags == 'success' %}msg-success
+         {% elif message.tags == 'error' %}msg-error
+         {% elif message.tags == 'warning' %}msg-warning
+         {% else %}msg-info{% endif %}">
+      {% if message.tags == 'success' %}
+        <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+      {% elif message.tags == 'error' %}
+        <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      {% elif message.tags == 'warning' %}
+        <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      {% else %}
+        <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      {% endif %}
+      {{ message }}
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Page content -->
+<main class="max-w-6xl mx-auto px-4 pb-12">
+  {% block content %}{% endblock %}
+</main>
+
+<!-- Scripts -->
+{% block extra_scripts %}{% endblock %}
+
+</body>
+</html>

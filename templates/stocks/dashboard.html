@@ -1,0 +1,971 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — StockAnalyzer{% endblock %}
+
+{% block content %}
+
+<!-- Page header -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-white">My Watchlist</h1>
+    <p class="text-sm mt-1" style="color:#64748B;">
+      {% if active_signal %}
+        {{ total }} de {{ total_unfiltered }} stock{{ total_unfiltered|pluralize }}
+      {% else %}
+        {{ total_unfiltered }} stock{{ total_unfiltered|pluralize }} tracked
+      {% endif %}
+      &mdash; {{ user.username }}
+    </p>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <a href="{% url 'analyze_all' %}" id="analyzeAllBtn" class="btn-ghost text-sm">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 013.51 15"/>
+      </svg>
+      Analyze All
+    </a>
+    <a href="{% url 'analyze_all' %}?force=1" id="forceAnalyzeBtn"
+       class="btn-ghost text-sm"
+       onclick="return confirm('Force re-analyze all tickers? This will re-download data and override today\'s cache.')">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+      </svg>
+      Force Re-analyze
+    </a>
+  </div>
+</div>
+
+<!-- Stats bar / Signal filters (server-side) -->
+<div class="grid grid-cols-3 gap-3 mb-6">
+
+  {% with is_buy=active_signal|stringformat:"s" %}
+  <!-- BUY -->
+  <a href="?{{ list_param }}{% if active_signal != 'BUY' %}signal=BUY{% endif %}"
+     class="card p-4 flex items-center gap-3 transition-all duration-200 cursor-pointer"
+     style="{% if active_signal == 'BUY' %}border:1px solid rgba(34,197,94,0.55);background:rgba(34,197,94,0.07);{% endif %}"
+     aria-pressed="{% if active_signal == 'BUY' %}true{% else %}false{% endif %}">
+    <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+         style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.25);">
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" aria-hidden="true">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+      </svg>
+    </div>
+    <div class="flex-1">
+      <p class="text-2xl font-bold glow-buy" style="color:#22C55E;">{{ buy_count }}</p>
+      <p class="text-xs font-medium" style="color:#64748B;">BUY Signals</p>
+    </div>
+    {% if active_signal == 'BUY' %}
+    <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+    {% endif %}
+  </a>
+
+  <!-- WATCH -->
+  <a href="?{{ list_param }}{% if active_signal != 'WATCH' %}signal=WATCH{% endif %}"
+     class="card p-4 flex items-center gap-3 transition-all duration-200 cursor-pointer"
+     style="{% if active_signal == 'WATCH' %}border:1px solid rgba(245,158,11,0.55);background:rgba(245,158,11,0.07);{% endif %}"
+     aria-pressed="{% if active_signal == 'WATCH' %}true{% else %}false{% endif %}">
+    <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+         style="background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.25);">
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    </div>
+    <div class="flex-1">
+      <p class="text-2xl font-bold glow-watch" style="color:#F59E0B;">{{ watch_count }}</p>
+      <p class="text-xs font-medium" style="color:#64748B;">Watching</p>
+    </div>
+    {% if active_signal == 'WATCH' %}
+    <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+    {% endif %}
+  </a>
+
+  <!-- NO BUY -->
+  <a href="?{{ list_param }}{% if active_signal != 'NO_BUY' %}signal=NO_BUY{% endif %}"
+     class="card p-4 flex items-center gap-3 transition-all duration-200 cursor-pointer"
+     style="{% if active_signal == 'NO_BUY' %}border:1px solid rgba(239,68,68,0.55);background:rgba(239,68,68,0.07);{% endif %}"
+     aria-pressed="{% if active_signal == 'NO_BUY' %}true{% else %}false{% endif %}">
+    <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+         style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.25);">
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+      </svg>
+    </div>
+    <div class="flex-1">
+      <p class="text-2xl font-bold glow-danger" style="color:#EF4444;">{{ no_buy_count }}</p>
+      <p class="text-xs font-medium" style="color:#64748B;">No Signal</p>
+    </div>
+    {% if active_signal == 'NO_BUY' %}
+    <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+    {% endif %}
+  </a>
+  {% endwith %}
+
+</div>
+
+<!-- Active signal banner -->
+{% if active_signal %}
+<div class="flex items-center justify-between px-4 py-2.5 rounded-lg mb-4 text-sm font-medium"
+     style="{% if active_signal == 'BUY' %}background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);{% elif active_signal == 'WATCH' %}background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);{% else %}background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);{% endif %}">
+  <span style="color:#94A3B8;">
+    Mostrando
+    <strong style="{% if active_signal == 'BUY' %}color:#22C55E;{% elif active_signal == 'WATCH' %}color:#F59E0B;{% else %}color:#EF4444;{% endif %}">
+      {% if active_signal == 'BUY' %}BUY{% elif active_signal == 'WATCH' %}WATCH{% else %}NO BUY{% endif %}
+    </strong>
+    &mdash; {{ total }} resultado{{ total|pluralize }}
+    {% if active_list %}en <strong style="color:#60A5FA;">{{ active_list.name|default:"General" }}</strong>{% endif %}
+  </span>
+  <a href="?{{ list_param }}" class="flex items-center gap-1.5 text-xs hover:opacity-80" style="color:#64748B;">
+    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+    Limpiar
+  </a>
+</div>
+{% endif %}
+
+<!-- Lists filter bar + Add form -->
+<div class="card p-5 mb-6">
+  <!-- Lists -->
+  <div class="flex items-center gap-2 flex-wrap mb-4">
+    <a href="{% url 'dashboard' %}"
+       class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors duration-200 {% if not active_list_id %}text-white{% else %}cursor-pointer{% endif %}"
+       style="{% if not active_list_id %}background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.35);color:#22C55E;{% else %}background:#0F172A;border:1px solid #334155;color:#64748B;{% endif %}">
+      All
+    </a>
+    {% for lst in user_lists %}
+    <a href="?list={{ lst.id }}"
+       class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors duration-200 cursor-pointer"
+       style="{% if active_list_id == lst.id|stringformat:'s' %}background:rgba(96,165,250,0.2);border:1px solid rgba(96,165,250,0.35);color:#60A5FA;{% else %}background:#0F172A;border:1px solid #334155;color:#64748B;{% endif %}">
+      {{ lst.name }}
+    </a>
+    {% endfor %}
+    <a href="?list=0"
+       class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors duration-200 cursor-pointer"
+       style="{% if active_list_id == '0' %}background:rgba(148,163,184,0.2);border:1px solid rgba(148,163,184,0.35);color:#94A3B8;{% else %}background:#0F172A;border:1px solid #334155;color:#64748B;{% endif %}">
+      General
+    </a>
+    <button onclick="openCreateListModal()"
+       class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors duration-200 cursor-pointer ml-1"
+       style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);color:#22C55E;">
+      <svg class="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      New List
+    </button>
+    {% if user_lists %}
+    <button onclick="openManageListsModal()"
+       class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors duration-200 cursor-pointer"
+       style="background:#0F172A;border:1px solid #334155;color:#64748B;">
+      Manage
+    </button>
+    {% endif %}
+  </div>
+
+  <!-- Add tickers -->
+  <p class="text-xs font-semibold text-slate-300 mb-1">Add Tickers</p>
+  <p class="text-xs mb-3" style="color:#475569;">Separate multiple tickers with commas — e.g. AAPL, TSLA, NVDA</p>
+  <form method="post" action="{% url 'add_ticker' %}" class="flex gap-3" id="addForm">
+    {% csrf_token %}
+    <div class="flex-1">{{ add_form.tickers }}</div>
+    <button type="submit" class="btn-primary flex-shrink-0" id="addBtn">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      Add &amp; Analyze
+    </button>
+  </form>
+</div>
+
+<!-- Stocks table -->
+{% if rows %}
+<div class="card overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm" role="table" aria-label="Stock watchlist">
+      <thead>
+        <tr style="border-bottom:1px solid #334155;">
+          <th class="text-left px-5 py-3 text-xs font-semibold tracking-wider" style="color:#64748B;">TICKER</th>
+          <th class="text-left px-4 py-3 text-xs font-semibold tracking-wider" style="color:#64748B;">SIGNAL</th>
+          <th class="text-right px-4 py-3 text-xs font-semibold tracking-wider hidden sm:table-cell" style="color:#64748B;">CLOSE</th>
+          <th class="text-right px-4 py-3 text-xs font-semibold tracking-wider hidden sm:table-cell" style="color:#64748B;">ENTRY</th>
+          <th class="text-right px-4 py-3 text-xs font-semibold tracking-wider hidden sm:table-cell" style="color:#64748B;">STOP</th>
+          <th class="text-right px-4 py-3 text-xs font-semibold tracking-wider hidden md:table-cell" style="color:#64748B;">TARGET</th>
+          <th class="text-center px-4 py-3 text-xs font-semibold tracking-wider hidden md:table-cell" style="color:#64748B;">CONFIDENCE</th>
+          <th class="text-center px-4 py-3 text-xs font-semibold tracking-wider hidden lg:table-cell" style="color:#64748B;">9 SMA</th>
+          <th class="text-right px-5 py-3 text-xs font-semibold tracking-wider" style="color:#64748B;">ACTIONS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="table-row transition-colors duration-150 {% if row.analysis and row.analysis.sma9_valid %}sma9-highlight{% endif %}"
+            data-signal="{{ row.analysis.signal|default:'NONE' }}"
+            style="border-bottom:1px solid rgba(51,65,85,0.5);{% if row.analysis and row.analysis.sma9_valid %}background:rgba(34,197,94,0.04);{% endif %}">
+
+          <!-- Ticker + company info + smart money -->
+          <td class="px-5 py-4">
+            <div class="flex items-center gap-1.5">
+              <a href="{% url 'stock_detail' row.entry.id %}" class="flex items-center gap-2 group cursor-pointer">
+                <div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                     style="background:#0F172A;border:1px solid #334155;color:#94A3B8;">
+                  {{ row.ticker.symbol|slice:":2" }}
+                </div>
+                <div>
+                  <p class="font-semibold text-white group-hover:text-green-400 transition-colors duration-200">
+                    {{ row.ticker.symbol }}
+                  </p>
+                  <p class="text-xs" style="color:#475569;">{{ row.entry.list_name }}</p>
+                </div>
+              </a>
+              <!-- Company info -->
+              <button onclick="openCompanyModal('{{ row.ticker.symbol }}')"
+                class="w-6 h-6 rounded-md flex items-center justify-center transition-colors duration-200 cursor-pointer flex-shrink-0"
+                style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);color:#60A5FA;"
+                title="Analyst ratings & company info" aria-label="Company info {{ row.ticker.symbol }}">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+              </button>
+              <!-- Smart Money -->
+              <button onclick="openSmartMoneyModal('{{ row.ticker.symbol }}')"
+                class="w-6 h-6 rounded-md flex items-center justify-center transition-colors duration-200 cursor-pointer flex-shrink-0"
+                style="background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.2);color:#A855F7;"
+                title="Smart Money: insiders & institutions" aria-label="Smart money {{ row.ticker.symbol }}">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+              </button>
+            </div>
+          </td>
+
+          <!-- Signal -->
+          <td class="px-4 py-4">
+            {% if row.analysis %}
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold
+                {% if row.analysis.signal == 'BUY' %}badge-buy{% elif row.analysis.signal == 'WATCH' %}badge-watch{% else %}badge-no-buy{% endif %}">
+                <span class="w-1.5 h-1.5 rounded-full
+                  {% if row.analysis.signal == 'BUY' %}bg-green-400{% elif row.analysis.signal == 'WATCH' %}bg-amber-400{% else %}bg-red-400{% endif %}"></span>
+                {{ row.analysis.signal }}
+              </span>
+            {% else %}
+              <span class="text-xs" style="color:#475569;">No data</span>
+            {% endif %}
+          </td>
+
+          <!-- Close -->
+          <td class="px-4 py-4 text-right hidden sm:table-cell">
+            {% if row.analysis and row.analysis.current_price %}
+              <span class="font-mono font-semibold text-white">${{ row.analysis.current_price|floatformat:2 }}</span>
+            {% else %}<span style="color:#475569;">—</span>{% endif %}
+          </td>
+
+          <!-- Entry -->
+          <td class="px-4 py-4 text-right hidden sm:table-cell">
+            {% if row.analysis %}
+              <span class="font-mono text-sm" style="color:#94A3B8;">${{ row.analysis.entry_price|floatformat:2 }}</span>
+            {% else %}<span style="color:#475569;">—</span>{% endif %}
+          </td>
+
+          <!-- Stop -->
+          <td class="px-4 py-4 text-right hidden sm:table-cell">
+            {% if row.analysis %}
+              <span class="font-mono font-medium" style="color:#EF4444;">${{ row.analysis.stop_loss|floatformat:2 }}</span>
+            {% else %}<span style="color:#475569;">—</span>{% endif %}
+          </td>
+
+          <!-- Take Profit -->
+          <td class="px-4 py-4 text-right hidden md:table-cell">
+            {% if row.analysis %}
+              <span class="font-mono font-medium" style="color:#22C55E;">${{ row.analysis.take_profit|floatformat:2 }}</span>
+            {% else %}<span style="color:#475569;">—</span>{% endif %}
+          </td>
+
+          <!-- Confidence -->
+          <td class="px-4 py-4 hidden md:table-cell">
+            {% if row.analysis %}
+            <div class="flex items-center gap-2 justify-center">
+              <div class="w-20 h-1.5 rounded-full overflow-hidden" style="background:#0F172A;">
+                <div class="h-full rounded-full"
+                     style="width:{{ row.analysis.confidence_score }}%;
+                            background:{% if row.analysis.signal == 'BUY' %}#22C55E{% elif row.analysis.signal == 'WATCH' %}#F59E0B{% else %}#EF4444{% endif %};">
+                </div>
+              </div>
+              <span class="text-xs font-mono font-semibold" style="color:#94A3B8;min-width:2.5rem;">{{ row.analysis.confidence_score }}%</span>
+            </div>
+            {% else %}<span class="block text-center" style="color:#475569;">—</span>{% endif %}
+          </td>
+
+          <!-- 9 SMA Pullback dots -->
+          <td class="px-4 py-4 hidden lg:table-cell">
+            <div class="flex items-center justify-center gap-1.5">
+              {% if row.analysis and row.analysis.sma9_data %}
+                {% with s=row.analysis.sma9_data %}
+                <span class="w-2.5 h-2.5 rounded-full cursor-default transition-transform duration-200 hover:scale-125"
+                  style="background:{% if s.trend %}#22C55E{% else %}#334155{% endif %};"
+                  title="Trend: close > SMA20 &amp; SMA9 > SMA20 &amp; HH/HL structure"></span>
+                <span class="w-2.5 h-2.5 rounded-full cursor-default transition-transform duration-200 hover:scale-125"
+                  style="background:{% if s.pullback %}#F59E0B{% else %}#334155{% endif %};"
+                  title="Pullback: price near SMA9 from above"></span>
+                <span class="w-2.5 h-2.5 rounded-full cursor-default transition-transform duration-200 hover:scale-125"
+                  style="background:{% if s.confirmation %}#60A5FA{% else %}#334155{% endif %};"
+                  title="Confirmation: bullish candle (close > open)"></span>
+                {% endwith %}
+              {% else %}
+                <span class="w-2.5 h-2.5 rounded-full" style="background:#1E293B;"></span>
+                <span class="w-2.5 h-2.5 rounded-full" style="background:#1E293B;"></span>
+                <span class="w-2.5 h-2.5 rounded-full" style="background:#1E293B;"></span>
+              {% endif %}
+            </div>
+          </td>
+
+          <!-- Actions -->
+          <td class="px-5 py-4">
+            <div class="flex items-center gap-1 justify-end">
+              <button onclick="openAssignModal({{ row.entry.id }}, '{{ row.ticker.symbol }}', {{ row.entry.stock_list.id|default:'null' }})"
+                class="w-7 h-7 rounded-md flex items-center justify-center transition-colors duration-200 cursor-pointer"
+                style="background:#0F172A;border:1px solid #334155;color:#64748B;"
+                title="Assign to list">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                  <path d="M4 6h16M4 10h16M4 14h10"/>
+                </svg>
+              </button>
+              <a href="{% url 'analyze_ticker' row.entry.id %}"
+                 class="w-7 h-7 rounded-md flex items-center justify-center transition-colors duration-200 cursor-pointer"
+                 style="background:#0F172A;border:1px solid #334155;color:#64748B;"
+                 title="Re-analyze (use today's cache)">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                  <path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 013.51 15"/>
+                </svg>
+              </a>
+              <a href="{% url 'analyze_ticker' row.entry.id %}?force=1"
+                 class="w-7 h-7 rounded-md flex items-center justify-center transition-colors duration-200 cursor-pointer"
+                 style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);color:#F59E0B;"
+                 title="Force re-analyze (bypass cache)">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                  <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                </svg>
+              </a>
+              <a href="{% url 'stock_detail' row.entry.id %}"
+                 class="w-7 h-7 rounded-md flex items-center justify-center transition-colors duration-200 cursor-pointer"
+                 style="background:#0F172A;border:1px solid #334155;color:#64748B;"
+                 title="View detail">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+              </a>
+              <a href="{% url 'remove_ticker' row.entry.id %}"
+                 class="w-7 h-7 rounded-md flex items-center justify-center transition-colors duration-200 cursor-pointer"
+                 style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);color:#EF4444;"
+                 onclick="return confirm('Remove {{ row.ticker.symbol }} from your watchlist?')"
+                 title="Remove">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                </svg>
+              </a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- SMA9 legend -->
+  <div class="flex items-center gap-4 px-5 py-3" style="border-top:1px solid #1E293B;">
+    <span class="text-xs" style="color:#475569;">9 SMA:</span>
+    <span class="flex items-center gap-1.5 text-xs" style="color:#64748B;">
+      <span class="w-2 h-2 rounded-full" style="background:#22C55E;"></span>Trend
+    </span>
+    <span class="flex items-center gap-1.5 text-xs" style="color:#64748B;">
+      <span class="w-2 h-2 rounded-full" style="background:#F59E0B;"></span>Pullback
+    </span>
+    <span class="flex items-center gap-1.5 text-xs" style="color:#64748B;">
+      <span class="w-2 h-2 rounded-full" style="background:#60A5FA;"></span>Confirm
+    </span>
+    <span class="flex items-center gap-1.5 text-xs" style="color:#22C55E;">
+      <span class="w-2 h-2 rounded-full" style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.3);"></span>All 3 = highlighted row
+    </span>
+  </div>
+
+  <!-- Pagination (only when not filtered by list) -->
+  {% if page_obj and page_obj.paginator.num_pages > 1 %}
+  <div class="flex items-center justify-between px-5 py-4" style="border-top:1px solid #334155;">
+    <p class="text-xs" style="color:#64748B;">
+      Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ total }} stocks
+    </p>
+    <div class="flex items-center gap-1">
+      {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}"
+           class="w-8 h-8 rounded-lg flex items-center justify-center"
+           style="background:#0F172A;border:1px solid #334155;color:#94A3B8;">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        </a>
+      {% endif %}
+      {% for num in page_obj.paginator.page_range %}
+        {% if num == page_obj.number %}
+          <span class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
+                style="background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.4);color:#22C55E;">{{ num }}</span>
+        {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}
+          <a href="?page={{ num }}"
+             class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-semibold"
+             style="background:#0F172A;border:1px solid #334155;color:#64748B;">{{ num }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}"
+           class="w-8 h-8 rounded-lg flex items-center justify-center"
+           style="background:#0F172A;border:1px solid #334155;color:#94A3B8;">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% else %}
+<div class="card p-16 flex flex-col items-center text-center">
+  <div class="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
+       style="background:#0F172A;border:1px solid #334155;">
+    <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5" aria-hidden="true">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+    </svg>
+  </div>
+  <h3 class="text-lg font-semibold text-white mb-2">
+    {% if active_list %}No stocks in this list{% else %}No stocks yet{% endif %}
+  </h3>
+  <p class="text-sm max-w-sm" style="color:#64748B;">
+    {% if active_list %}
+      Add tickers and assign them to this list using the list icon in the actions column.
+    {% else %}
+      Add your first tickers above — you can add several at once separated by commas.
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+
+
+<!-- ═══════════════════ COMPANY INFO MODAL ═══════════════════════════════════ -->
+<div id="companyModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     style="display:none!important;background:rgba(2,6,23,0.85);backdrop-filter:blur(6px);">
+  <div class="card w-full max-w-lg relative" style="max-height:90vh;overflow-y:auto;">
+    <button onclick="closeCompanyModal()"
+            class="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer"
+            style="background:#0F172A;border:1px solid #334155;color:#64748B;" aria-label="Close">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <div id="cmLoading" class="p-8 flex flex-col items-center gap-4">
+      <div class="w-10 h-10 rounded-full border-2 border-green-400 border-t-transparent animate-spin"></div>
+      <p class="text-sm" style="color:#64748B;">Fetching company data...</p>
+    </div>
+    <div id="cmError" class="p-8 text-center" style="display:none;">
+      <p class="text-sm font-semibold" style="color:#EF4444;">Could not load data</p>
+      <p id="cmErrorMsg" class="text-xs mt-1" style="color:#64748B;"></p>
+    </div>
+    <div id="cmContent" style="display:none;">
+      <div class="p-6" style="border-bottom:1px solid #334155;">
+        <div class="flex items-start gap-4">
+          <div id="cmAvatar" class="w-12 h-12 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
+               style="background:#0F172A;border:1px solid #334155;color:#94A3B8;"></div>
+          <div class="flex-1 min-w-0">
+            <h2 id="modalTitle" class="text-lg font-bold text-white leading-tight truncate"></h2>
+            <p id="cmSubtitle" class="text-xs mt-0.5" style="color:#64748B;"></p>
+          </div>
+          <div class="text-right flex-shrink-0">
+            <p id="cmPrice" class="text-xl font-bold font-mono text-white"></p>
+            <p class="text-xs" style="color:#64748B;">Current Price</p>
+          </div>
+        </div>
+      </div>
+      <div class="p-6" style="border-bottom:1px solid #334155;">
+        <p class="text-xs font-semibold tracking-wider mb-4" style="color:#64748B;">ANALYST CONSENSUS</p>
+        <div class="flex items-center gap-4 mb-5">
+          <div id="cmConsensusBadge" class="px-4 py-2 rounded-xl text-sm font-black tracking-wide flex-shrink-0"></div>
+          <div>
+            <p class="text-xs" style="color:#64748B;">Based on <span id="cmNAnalysts" class="font-bold text-white"></span> analysts</p>
+            <div class="flex items-center gap-2 mt-1">
+              <span class="text-xs" style="color:#64748B;">Mean score:</span>
+              <div class="w-20 h-1.5 rounded-full overflow-hidden" style="background:#0F172A;">
+                <div id="cmMeanBar" class="h-full rounded-full"></div>
+              </div>
+              <span id="cmMeanText" class="text-xs font-mono font-semibold" style="color:#94A3B8;"></span>
+            </div>
+          </div>
+        </div>
+        <div id="cmBreakdown" class="space-y-2"></div>
+        <div class="grid grid-cols-3 gap-3 mt-5">
+          <div class="p-3 rounded-lg text-center" style="background:#0F172A;border:1px solid #334155;">
+            <p class="text-xs font-semibold mb-1" style="color:#64748B;">LOW TARGET</p>
+            <p id="cmTargetLow" class="text-base font-bold font-mono" style="color:#EF4444;"></p>
+          </div>
+          <div class="p-3 rounded-lg text-center" style="background:#0F172A;border:1px solid rgba(34,197,94,0.3);">
+            <p class="text-xs font-semibold mb-1" style="color:#64748B;">MEAN TARGET</p>
+            <p id="cmTargetMean" class="text-base font-bold font-mono text-white"></p>
+          </div>
+          <div class="p-3 rounded-lg text-center" style="background:#0F172A;border:1px solid rgba(34,197,94,0.25);">
+            <p class="text-xs font-semibold mb-1" style="color:#64748B;">HIGH TARGET</p>
+            <p id="cmTargetHigh" class="text-base font-bold font-mono" style="color:#22C55E;"></p>
+          </div>
+        </div>
+      </div>
+      <div class="p-6" style="border-bottom:1px solid #334155;">
+        <p class="text-xs font-semibold tracking-wider mb-3" style="color:#64748B;">COMPANY INFO</p>
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div><p class="text-xs mb-0.5" style="color:#475569;">Sector</p><p id="cmSector" class="font-medium text-white text-xs"></p></div>
+          <div><p class="text-xs mb-0.5" style="color:#475569;">Industry</p><p id="cmIndustry" class="font-medium text-white text-xs"></p></div>
+          <div><p class="text-xs mb-0.5" style="color:#475569;">Country</p><p id="cmCountry" class="font-medium text-white text-xs"></p></div>
+          <div><p class="text-xs mb-0.5" style="color:#475569;">Market Cap</p><p id="cmMarketCap" class="font-medium text-white text-xs"></p></div>
+          <div><p class="text-xs mb-0.5" style="color:#475569;">52W High</p><p id="cm52High" class="font-medium text-xs" style="color:#22C55E;"></p></div>
+          <div><p class="text-xs mb-0.5" style="color:#475569;">52W Low</p><p id="cm52Low" class="font-medium text-xs" style="color:#EF4444;"></p></div>
+        </div>
+        <p id="cmDesc" class="text-xs leading-relaxed" style="color:#94A3B8;"></p>
+      </div>
+      <div class="p-4 flex justify-end">
+        <button onclick="closeCompanyModal()" class="btn-ghost text-xs px-3 py-2 cursor-pointer">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════ SMART MONEY MODAL ════════════════════════════════════ -->
+<div id="smartMoneyModal" role="dialog" aria-modal="true" aria-labelledby="smTitle"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     style="display:none!important;background:rgba(2,6,23,0.85);backdrop-filter:blur(6px);">
+  <div class="card w-full max-w-2xl relative" style="max-height:90vh;overflow-y:auto;">
+    <div class="flex items-center justify-between p-5" style="border-bottom:1px solid #334155;">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="2" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <div>
+          <h2 id="smTitle" class="text-base font-bold text-white">Smart Money</h2>
+          <p id="smSubtitle" class="text-xs" style="color:#64748B;"></p>
+        </div>
+      </div>
+      <button onclick="closeSmartMoneyModal()"
+              class="w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer"
+              style="background:#0F172A;border:1px solid #334155;color:#64748B;" aria-label="Close">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div id="smLoading" class="p-8 flex flex-col items-center gap-4">
+      <div class="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin" style="border-color:rgba(168,85,247,0.6);border-top-color:transparent;"></div>
+      <p class="text-sm" style="color:#64748B;">Fetching smart money data...</p>
+    </div>
+    <div id="smError" class="p-8 text-center" style="display:none;">
+      <p class="text-sm font-semibold" style="color:#EF4444;">Could not load data</p>
+      <p id="smErrorMsg" class="text-xs mt-1" style="color:#64748B;"></p>
+    </div>
+
+    <div id="smContent" style="display:none;">
+      <!-- Tabs -->
+      <div class="flex border-b" style="border-color:#334155;">
+        <button id="smTabInsiders" onclick="smShowTab('insiders')"
+          class="px-5 py-3 text-xs font-semibold transition-colors duration-200 cursor-pointer"
+          style="border-bottom:2px solid #A855F7;color:#A855F7;">Insider Transactions</button>
+        <button id="smTabInstitutions" onclick="smShowTab('institutions')"
+          class="px-5 py-3 text-xs font-semibold transition-colors duration-200 cursor-pointer"
+          style="border-bottom:2px solid transparent;color:#64748B;">Institutional Holders</button>
+      </div>
+
+      <!-- Insiders tab -->
+      <div id="smPanelInsiders" class="overflow-x-auto">
+        <table class="w-full text-xs" role="table">
+          <thead>
+            <tr style="border-bottom:1px solid #334155;">
+              <th class="text-left px-4 py-2.5 font-semibold tracking-wider" style="color:#64748B;">INSIDER</th>
+              <th class="text-left px-4 py-2.5 font-semibold tracking-wider hidden sm:table-cell" style="color:#64748B;">CARGO</th>
+              <th class="text-left px-4 py-2.5 font-semibold tracking-wider" style="color:#64748B;">FECHA</th>
+              <th class="text-center px-4 py-2.5 font-semibold tracking-wider" style="color:#64748B;">OPERACIÓN</th>
+              <th class="text-right px-4 py-2.5 font-semibold tracking-wider" style="color:#64748B;">ACCIONES</th>
+              <th class="text-right px-4 py-2.5 font-semibold tracking-wider hidden sm:table-cell" style="color:#64748B;">VALOR</th>
+            </tr>
+          </thead>
+          <tbody id="smInsidersBody"></tbody>
+        </table>
+        <div id="smInsidersEmpty" class="p-8 text-center text-sm" style="color:#475569;display:none;">No hay transacciones de insiders.</div>
+      </div>
+
+      <!-- Institutions tab -->
+      <div id="smPanelInstitutions" class="overflow-x-auto" style="display:none;">
+        <table class="w-full text-xs" role="table">
+          <thead>
+            <tr style="border-bottom:1px solid #334155;">
+              <th class="text-left px-4 py-2.5 font-semibold tracking-wider" style="color:#64748B;">INSTITUCIÓN</th>
+              <th class="text-right px-4 py-2.5 font-semibold tracking-wider" style="color:#64748B;">ACCIONES</th>
+              <th class="text-right px-4 py-2.5 font-semibold tracking-wider" style="color:#64748B;">% HELD</th>
+              <th class="text-center px-4 py-2.5 font-semibold tracking-wider" style="color:#64748B;">CAMBIO</th>
+              <th class="text-right px-4 py-2.5 font-semibold tracking-wider hidden sm:table-cell" style="color:#64748B;">VALOR</th>
+            </tr>
+          </thead>
+          <tbody id="smInstitutionsBody"></tbody>
+        </table>
+        <div id="smInstitutionsEmpty" class="p-8 text-center text-sm" style="color:#475569;display:none;">No hay datos institucionales.</div>
+      </div>
+
+      <div class="p-4 flex items-center justify-between" style="border-top:1px solid #334155;">
+        <p class="text-xs" style="color:#475569;">Data via Yahoo Finance · Not investment advice</p>
+        <button onclick="closeSmartMoneyModal()" class="btn-ghost text-xs px-3 py-2 cursor-pointer">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════ CREATE LIST MODAL ════════════════════════════════════ -->
+<div id="createListModal" role="dialog" aria-modal="true" aria-labelledby="clTitle"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     style="display:none!important;background:rgba(2,6,23,0.85);backdrop-filter:blur(6px);">
+  <div class="card w-full max-w-sm relative p-6">
+    <button onclick="closeCreateListModal()"
+            class="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer"
+            style="background:#0F172A;border:1px solid #334155;color:#64748B;" aria-label="Close">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <h2 id="clTitle" class="text-base font-bold text-white mb-1">Create New List</h2>
+    <p class="text-xs mb-4" style="color:#64748B;">Group your tickers into categories (e.g. Swing, Tech, Earnings).</p>
+    <form method="post" action="{% url 'create_list' %}">
+      {% csrf_token %}
+      {{ create_form.name }}
+      <div class="flex gap-3 mt-4">
+        <button type="submit" class="btn-primary flex-1">Create List</button>
+        <button type="button" onclick="closeCreateListModal()" class="btn-ghost flex-1 cursor-pointer">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+<!-- ═══════════════════ MANAGE / DELETE LISTS MODAL ══════════════════════════ -->
+<div id="manageListsModal" role="dialog" aria-modal="true" aria-labelledby="mlTitle"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     style="display:none!important;background:rgba(2,6,23,0.85);backdrop-filter:blur(6px);">
+  <div class="card w-full max-w-sm relative p-6">
+    <button onclick="closeManageListsModal()"
+            class="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer"
+            style="background:#0F172A;border:1px solid #334155;color:#64748B;" aria-label="Close">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <h2 id="mlTitle" class="text-base font-bold text-white mb-4">Manage Lists</h2>
+    <div class="space-y-2">
+      {% for lst in user_lists %}
+      <div class="flex items-center justify-between px-3 py-2.5 rounded-lg" style="background:#0F172A;border:1px solid #334155;">
+        <span class="text-sm font-medium text-white">{{ lst.name }}</span>
+        <form method="post" action="{% url 'delete_list' lst.id %}" onsubmit="return confirm('Delete list \'{{ lst.name }}\'? Tickers will move to General.')">
+          {% csrf_token %}
+          <button type="submit" class="text-xs cursor-pointer hover:opacity-80 transition-opacity" style="color:#EF4444;">Delete</button>
+        </form>
+      </div>
+      {% empty %}
+      <p class="text-sm" style="color:#64748B;">No lists yet.</p>
+      {% endfor %}
+    </div>
+    <button onclick="closeManageListsModal()" class="btn-ghost w-full mt-5 cursor-pointer">Close</button>
+  </div>
+</div>
+
+
+<!-- ═══════════════════ ASSIGN LIST MODAL ════════════════════════════════════ -->
+<div id="assignModal" role="dialog" aria-modal="true" aria-labelledby="asgTitle"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     style="display:none!important;background:rgba(2,6,23,0.85);backdrop-filter:blur(6px);">
+  <div class="card w-full max-w-sm relative p-6">
+    <button onclick="closeAssignModal()"
+            class="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer"
+            style="background:#0F172A;border:1px solid #334155;color:#64748B;" aria-label="Close">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <h2 id="asgTitle" class="text-base font-bold text-white mb-1">Assign to List</h2>
+    <p id="asgSubtitle" class="text-xs mb-4" style="color:#64748B;"></p>
+    {% csrf_token %}
+    <select id="asgSelect" class="form-input w-full mb-4">
+      <option value="">— General (no list) —</option>
+      {% for lst in user_lists %}
+      <option value="{{ lst.id }}">{{ lst.name }}</option>
+      {% endfor %}
+    </select>
+    <div class="flex gap-3">
+      <button id="asgSaveBtn" onclick="saveAssign()" class="btn-primary flex-1 cursor-pointer">Save</button>
+      <button onclick="closeAssignModal()" class="btn-ghost flex-1 cursor-pointer">Cancel</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// ── Button loading states ───────────────────────────────────────────────────
+document.getElementById('addForm').addEventListener('submit', function() {
+  const btn = document.getElementById('addBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0"/></svg> Adding...';
+});
+
+// ── Modal helpers ───────────────────────────────────────────────────────────
+function showModal(id)  { document.getElementById(id).style.removeProperty('display'); document.getElementById(id).style.display='flex'; document.body.style.overflow='hidden'; }
+function hideModal(id)  { document.getElementById(id).style.display='none'; document.body.style.overflow=''; }
+
+// Backdrop click & Escape close for all modals
+['companyModal','smartMoneyModal','createListModal','manageListsModal','assignModal'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('click', e => { if (e.target === el) hideModal(id); });
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  ['companyModal','smartMoneyModal','createListModal','manageListsModal','assignModal'].forEach(id => {
+    if (document.getElementById(id).style.display !== 'none') hideModal(id);
+  });
+});
+
+// ── Company Info Modal ──────────────────────────────────────────────────────
+function consensusColor(key) {
+  return ({
+    strong_buy:  {bg:'rgba(34,197,94,0.2)', color:'#22C55E',border:'rgba(34,197,94,0.4)'},
+    buy:         {bg:'rgba(34,197,94,0.15)',color:'#4ADE80', border:'rgba(34,197,94,0.3)'},
+    hold:        {bg:'rgba(245,158,11,0.15)',color:'#F59E0B',border:'rgba(245,158,11,0.3)'},
+    underperform:{bg:'rgba(239,68,68,0.12)', color:'#F87171',border:'rgba(239,68,68,0.3)'},
+    sell:        {bg:'rgba(239,68,68,0.2)',  color:'#EF4444',border:'rgba(239,68,68,0.4)'},
+  })[key] || {bg:'rgba(100,116,139,0.15)',color:'#94A3B8',border:'rgba(100,116,139,0.3)'};
+}
+
+function fmtCap(v) {
+  if (!v) return '—';
+  if (v > 1e12) return '$'+(v/1e12).toFixed(2)+'T';
+  if (v > 1e9)  return '$'+(v/1e9).toFixed(2)+'B';
+  if (v > 1e6)  return '$'+(v/1e6).toFixed(2)+'M';
+  return '$'+v.toLocaleString();
+}
+
+function openCompanyModal(symbol) {
+  showModal('companyModal');
+  document.getElementById('cmLoading').style.display  = 'flex';
+  document.getElementById('cmError').style.display    = 'none';
+  document.getElementById('cmContent').style.display  = 'none';
+
+  fetch(`/company-info/${symbol}/`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw new Error(data.error);
+      const c = data.company, a = data.analysts;
+      document.getElementById('cmAvatar').textContent    = symbol.slice(0,2);
+      document.getElementById('modalTitle').textContent  = c.name;
+      document.getElementById('cmSubtitle').textContent  = [c.exchange, c.sector].filter(Boolean).join(' · ');
+      document.getElementById('cmPrice').textContent     = c.current_price ? `$${parseFloat(c.current_price).toFixed(2)}` : '—';
+
+      const col = consensusColor(a.rec_key), badge = document.getElementById('cmConsensusBadge');
+      badge.textContent = a.consensus || '—';
+      badge.style.background = col.bg; badge.style.color = col.color; badge.style.border = `1px solid ${col.border}`;
+
+      document.getElementById('cmNAnalysts').textContent = a.n_analysts || '0';
+      if (a.mean_score) {
+        const pct = Math.max(0, Math.min(100, ((5 - a.mean_score) / 4) * 100));
+        document.getElementById('cmMeanBar').style.cssText  = `width:${pct}%;background:${col.color};`;
+        document.getElementById('cmMeanText').textContent   = a.mean_score + '/5';
+      } else { document.getElementById('cmMeanText').textContent = '—'; }
+
+      const bd = a.breakdown, tot = Object.values(bd).reduce((s,v)=>s+v,0)||1;
+      document.getElementById('cmBreakdown').innerHTML = [
+        {key:'strongBuy',label:'Strong Buy',color:'#22C55E'},
+        {key:'buy',      label:'Buy',       color:'#4ADE80'},
+        {key:'hold',     label:'Hold',      color:'#F59E0B'},
+        {key:'sell',     label:'Sell',      color:'#F87171'},
+        {key:'strongSell',label:'Strong Sell',color:'#EF4444'},
+      ].map(({key,label,color}) => {
+        const n = bd[key]||0, p = Math.round(n/tot*100);
+        return `<div class="flex items-center gap-3">
+          <span class="text-xs w-20 flex-shrink-0" style="color:#64748B;">${label}</span>
+          <div class="flex-1 h-1.5 rounded-full overflow-hidden" style="background:#0F172A;">
+            <div class="h-full rounded-full" style="width:${p}%;background:${color};"></div>
+          </div>
+          <span class="text-xs font-mono w-5 text-right" style="color:#94A3B8;">${n}</span>
+        </div>`;
+      }).join('');
+
+      document.getElementById('cmTargetLow').textContent   = a.target_low  ? `$${a.target_low}`  : '—';
+      document.getElementById('cmTargetMean').textContent  = a.target_mean ? `$${a.target_mean}` : '—';
+      document.getElementById('cmTargetHigh').textContent  = a.target_high ? `$${a.target_high}` : '—';
+      document.getElementById('cmSector').textContent      = c.sector   || '—';
+      document.getElementById('cmIndustry').textContent    = c.industry || '—';
+      document.getElementById('cmCountry').textContent     = c.country  || '—';
+      document.getElementById('cmMarketCap').textContent   = fmtCap(c.market_cap);
+      document.getElementById('cm52High').textContent      = c.fifty_two_high ? `$${c.fifty_two_high}` : '—';
+      document.getElementById('cm52Low').textContent       = c.fifty_two_low  ? `$${c.fifty_two_low}`  : '—';
+      document.getElementById('cmDesc').textContent        = c.description || 'No description available.';
+
+      document.getElementById('cmLoading').style.display = 'none';
+      document.getElementById('cmContent').style.display = 'block';
+    })
+    .catch(err => {
+      document.getElementById('cmLoading').style.display  = 'none';
+      document.getElementById('cmErrorMsg').textContent   = err.message;
+      document.getElementById('cmError').style.display    = 'block';
+    });
+}
+function closeCompanyModal() { hideModal('companyModal'); }
+
+// ── Smart Money Modal ───────────────────────────────────────────────────────
+let smActiveTab = 'insiders';
+
+function openSmartMoneyModal(symbol) {
+  showModal('smartMoneyModal');
+  document.getElementById('smTitle').textContent    = `Smart Money — ${symbol}`;
+  document.getElementById('smSubtitle').textContent = 'Insider transactions & institutional holders';
+  document.getElementById('smLoading').style.display  = 'flex';
+  document.getElementById('smError').style.display    = 'none';
+  document.getElementById('smContent').style.display  = 'none';
+  smShowTab('insiders');
+
+  fetch(`/smart-money/${symbol}/`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw new Error(data.error);
+
+      // Insiders
+      const iBody = document.getElementById('smInsidersBody');
+      if (data.insiders && data.insiders.length) {
+        iBody.innerHTML = data.insiders.map(ins => {
+          const isBuy  = ins.direction === 'buy';
+          const isSell = ins.direction === 'sell';
+          const badgeColor  = isBuy ? '#22C55E' : isSell ? '#EF4444' : '#94A3B8';
+          const badgeBg     = isBuy ? 'rgba(34,197,94,0.15)' : isSell ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.1)';
+          const badgeBorder = isBuy ? 'rgba(34,197,94,0.35)' : isSell ? 'rgba(239,68,68,0.35)' : 'rgba(148,163,184,0.2)';
+          const arrow = isBuy ? '▲' : isSell ? '▼' : '•';
+          const tooltip = ins.text ? ` title="${ins.text}"` : '';
+          return `<tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
+            <td class="px-4 py-2.5">
+              <p class="font-medium" style="color:#CBD5E1;">${ins.insider}</p>
+              ${ins.text ? `<p class="text-xs mt-0.5" style="color:#475569;max-width:12rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${ins.text}</p>` : ''}
+            </td>
+            <td class="px-4 py-2.5 hidden sm:table-cell" style="color:#64748B;">${ins.position}</td>
+            <td class="px-4 py-2.5 font-mono" style="color:#64748B;">${ins.date}</td>
+            <td class="px-4 py-2.5 text-center">
+              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold"
+                    style="color:${badgeColor};background:${badgeBg};border:1px solid ${badgeBorder};">
+                ${arrow} ${ins.direction_label}
+              </span>
+            </td>
+            <td class="px-4 py-2.5 text-right font-mono" style="color:#94A3B8;">${ins.shares}</td>
+            <td class="px-4 py-2.5 text-right font-mono hidden sm:table-cell" style="color:#94A3B8;">${ins.value}</td>
+          </tr>`;
+        }).join('');
+        document.getElementById('smInsidersEmpty').style.display = 'none';
+      } else {
+        iBody.innerHTML = '';
+        document.getElementById('smInsidersEmpty').style.display = 'block';
+      }
+
+      // Institutions
+      const instBody = document.getElementById('smInstitutionsBody');
+      if (data.institutions && data.institutions.length) {
+        instBody.innerHTML = data.institutions.map(inst => {
+          const isBuy  = inst.direction === 'buy';
+          const isSell = inst.direction === 'sell';
+          const chgColor  = isBuy ? '#22C55E' : isSell ? '#EF4444' : '#64748B';
+          const chgBg     = isBuy ? 'rgba(34,197,94,0.12)' : isSell ? 'rgba(239,68,68,0.12)' : 'transparent';
+          const chgBorder = isBuy ? 'rgba(34,197,94,0.3)' : isSell ? 'rgba(239,68,68,0.3)' : 'transparent';
+          const arrow = isBuy ? '▲' : isSell ? '▼' : '';
+          return `<tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
+            <td class="px-4 py-2.5">
+              <p class="font-medium" style="color:#CBD5E1;">${inst.holder}</p>
+              <p class="text-xs mt-0.5" style="color:#475569;">${inst.date}</p>
+            </td>
+            <td class="px-4 py-2.5 text-right font-mono" style="color:#94A3B8;">${inst.shares}</td>
+            <td class="px-4 py-2.5 text-right font-mono" style="color:#60A5FA;">${inst.pct_held}</td>
+            <td class="px-4 py-2.5 text-center">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold"
+                    style="color:${chgColor};background:${chgBg};border:1px solid ${chgBorder};">
+                ${arrow} ${inst.change}
+              </span>
+            </td>
+            <td class="px-4 py-2.5 text-right font-mono hidden sm:table-cell" style="color:#94A3B8;">${inst.value}</td>
+          </tr>`;
+        }).join('');
+        document.getElementById('smInstitutionsEmpty').style.display = 'none';
+      } else {
+        instBody.innerHTML = '';
+        document.getElementById('smInstitutionsEmpty').style.display = 'block';
+      }
+
+      document.getElementById('smLoading').style.display = 'none';
+      document.getElementById('smContent').style.display = 'block';
+    })
+    .catch(err => {
+      document.getElementById('smLoading').style.display = 'none';
+      document.getElementById('smErrorMsg').textContent  = err.message;
+      document.getElementById('smError').style.display   = 'block';
+    });
+}
+
+function smShowTab(tab) {
+  smActiveTab = tab;
+  const isIns = tab === 'insiders';
+  document.getElementById('smPanelInsiders').style.display     = isIns ? '' : 'none';
+  document.getElementById('smPanelInstitutions').style.display = isIns ? 'none' : '';
+  document.getElementById('smTabInsiders').style.cssText       = `border-bottom:2px solid ${isIns?'#A855F7':'transparent'};color:${isIns?'#A855F7':'#64748B'};`;
+  document.getElementById('smTabInstitutions').style.cssText   = `border-bottom:2px solid ${!isIns?'#A855F7':'transparent'};color:${!isIns?'#A855F7':'#64748B'};`;
+}
+
+function closeSmartMoneyModal() { hideModal('smartMoneyModal'); }
+
+// ── Create List Modal ───────────────────────────────────────────────────────
+function openCreateListModal()  { showModal('createListModal'); }
+function closeCreateListModal() { hideModal('createListModal'); }
+function openManageListsModal() { showModal('manageListsModal'); }
+function closeManageListsModal(){ hideModal('manageListsModal'); }
+
+// ── Assign List Modal ───────────────────────────────────────────────────────
+let asgEntryId = null;
+
+function openAssignModal(entryId, symbol, currentListId) {
+  asgEntryId = entryId;
+  document.getElementById('asgTitle').textContent   = `Assign ${symbol} to List`;
+  document.getElementById('asgSubtitle').textContent = 'Choose a list or leave as General.';
+  const sel = document.getElementById('asgSelect');
+  sel.value = currentListId || '';
+  showModal('assignModal');
+}
+
+function getCsrf() {
+  return document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+}
+
+function saveAssign() {
+  if (!asgEntryId) return;
+  const listId = document.getElementById('asgSelect').value;
+  const btn = document.getElementById('asgSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+
+  const body = new FormData();
+  body.append('stock_list', listId);
+  body.append('csrfmiddlewaretoken', getCsrf());
+
+  fetch(`/lists/assign/${asgEntryId}/`, {method:'POST', body})
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        closeAssignModal();
+        // Update the list name in the row subtitle
+        const row = document.querySelector(`a[href*="/detail/${asgEntryId}/"]`);
+        if (row) {
+          const sub = row.closest('td')?.querySelector('p:last-child');
+          if (sub) sub.textContent = data.list_name;
+        }
+      }
+    })
+    .finally(() => { btn.disabled = false; btn.textContent = 'Save'; });
+}
+
+function closeAssignModal() { hideModal('assignModal'); asgEntryId = null; }
+</script>
+{% endblock %}

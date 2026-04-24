@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}Create Account — StockAnalyzer{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center py-16 px-4" style="margin-top: -5rem;">
+  <div class="w-full max-w-md">
+
+    <!-- Header -->
+    <div class="flex flex-col items-center mb-8">
+      <div class="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+           style="background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); box-shadow: 0 0 24px rgba(34,197,94,0.15);">
+        <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" aria-hidden="true">
+          <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+          <polyline points="16 7 22 7 22 13"/>
+        </svg>
+      </div>
+      <h1 class="text-2xl font-bold tracking-tight text-white">Start analyzing</h1>
+      <p class="text-sm mt-1" style="color:#94A3B8;">Create your free StockAnalyzer account</p>
+    </div>
+
+    <!-- Card -->
+    <div class="card p-8">
+      <form method="post" novalidate>
+        {% csrf_token %}
+
+        <!-- Username -->
+        <div class="mb-4">
+          <label for="{{ form.username.id_for_label }}" class="block text-sm font-semibold mb-2 text-slate-300">
+            Username
+          </label>
+          {{ form.username }}
+          {% if form.username.errors %}
+            <p class="text-xs mt-1.5" style="color:#EF4444;">{{ form.username.errors|join:', ' }}</p>
+          {% endif %}
+        </div>
+
+        <!-- Email -->
+        <div class="mb-4">
+          <label for="{{ form.email.id_for_label }}" class="block text-sm font-semibold mb-2 text-slate-300">
+            Email address
+          </label>
+          {{ form.email }}
+          {% if form.email.errors %}
+            <p class="text-xs mt-1.5" style="color:#EF4444;">{{ form.email.errors|join:', ' }}</p>
+          {% endif %}
+        </div>
+
+        <!-- Password 1 -->
+        <div class="mb-4">
+          <label for="{{ form.password1.id_for_label }}" class="block text-sm font-semibold mb-2 text-slate-300">
+            Password
+          </label>
+          {{ form.password1 }}
+          {% if form.password1.errors %}
+            <p class="text-xs mt-1.5" style="color:#EF4444;">{{ form.password1.errors|join:', ' }}</p>
+          {% endif %}
+        </div>
+
+        <!-- Password 2 -->
+        <div class="mb-6">
+          <label for="{{ form.password2.id_for_label }}" class="block text-sm font-semibold mb-2 text-slate-300">
+            Confirm password
+          </label>
+          {{ form.password2 }}
+          {% if form.password2.errors %}
+            <p class="text-xs mt-1.5" style="color:#EF4444;">{{ form.password2.errors|join:', ' }}</p>
+          {% endif %}
+        </div>
+
+        <button type="submit" class="btn-primary w-full justify-center py-3 text-sm">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"/>
+          </svg>
+          Create Account
+        </button>
+      </form>
+
+      <p class="text-center text-sm mt-6" style="color:#64748B;">
+        Already have an account?
+        <a href="{% url 'login' %}" class="font-semibold transition-colors duration-200 hover:opacity-80" style="color:#22C55E;">
+          Sign in
+        </a>
+      </p>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
