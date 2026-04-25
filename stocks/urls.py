@@ -7,6 +7,8 @@ urlpatterns = [
     path('remove/<int:entry_id>/',         views.remove_ticker,  name='remove_ticker'),
     path('analyze/<int:entry_id>/',        views.analyze_ticker, name='analyze_ticker'),
     path('analyze-all/',                   views.analyze_all,    name='analyze_all'),
+    path('trades/',                        views.trade_plans,    name='trade_plans'),
+    path('performance/',                   views.performance,    name='performance'),
     path('detail/<int:entry_id>/',         views.stock_detail,   name='stock_detail'),
     # AJAX
     path('company-info/<str:symbol>/',     views.company_info,   name='company_info'),

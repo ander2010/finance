@@ -1,3 +1,4 @@
+import json
 import yfinance as yf
 from datetime import date, timedelta
 from django.shortcuts import render, redirect, get_object_or_404
@@ -7,10 +8,13 @@ from django.http import JsonResponse
 from django.core.paginator import Paginator
 from django.db.models import Max, Min
 from django.views.decorators.http import require_GET, require_POST
-from .models import Ticker, Watchlist, TickerAnalysis, StockList
+from .models import Ticker, Watchlist, TickerAnalysis, StockList, Trade, TradingProfile
 from .forms import AddTickersForm, CreateListForm, AssignListForm
 from .analysis import run_analysis_for_ticker
 from .services.smart_money import get_smart_money
+from .services.trade_engine import generate_trade_plan
+from .services.performance import compute_metrics, compute_equity_curve, compute_breakdown
+from .email_utils import send_analysis_report_email
 
 PAGE_SIZE = 50
 
@@ -21,6 +25,7 @@ def dashboard(request):
 
     active_list_id = request.GET.get('list')
     active_signal  = request.GET.get('signal')
+    search_q       = request.GET.get('search', '').strip().upper()
     if active_signal not in ('BUY', 'WATCH', 'NO_BUY'):
         active_signal = None
 
@@ -45,6 +50,10 @@ def dashboard(request):
             active_list    = None
             active_list_id = None
 
+    # Search filter at DB level — case-insensitive prefix match
+    if search_q:
+        qs = qs.filter(ticker__symbol__istartswith=search_q)
+
     add_form    = AddTickersForm()
     create_form = CreateListForm()
     all_rows    = []
@@ -67,8 +76,8 @@ def dashboard(request):
     else:
         filtered_rows = all_rows
 
-    # Paginate only when no active filters
-    if not active_list_id and not active_signal:
+    # Paginate only when no active filters (search disables pagination)
+    if not active_list_id and not active_signal and not search_q:
         paginator   = Paginator(filtered_rows, PAGE_SIZE)
         page_number = request.GET.get('page', 1)
         page_obj    = paginator.get_page(page_number)
@@ -81,20 +90,21 @@ def dashboard(request):
     list_param = f"list={active_list_id}&" if active_list_id else ""
 
     return render(request, 'stocks/dashboard.html', {
-        'rows':           rows,
-        'page_obj':       page_obj,
-        'add_form':       add_form,
-        'create_form':    create_form,
-        'user_lists':     user_lists,
-        'active_list':    active_list,
-        'active_list_id': active_list_id,
-        'active_signal':  active_signal,
-        'list_param':     list_param,
-        'total':          len(filtered_rows),
+        'rows':             rows,
+        'page_obj':         page_obj,
+        'add_form':         add_form,
+        'create_form':      create_form,
+        'user_lists':       user_lists,
+        'active_list':      active_list,
+        'active_list_id':   active_list_id,
+        'active_signal':    active_signal,
+        'search_q':         search_q,
+        'list_param':       list_param,
+        'total':            len(filtered_rows),
         'total_unfiltered': len(all_rows),
-        'buy_count':      buy_count,
-        'watch_count':    watch_count,
-        'no_buy_count':   no_buy_count,
+        'buy_count':        buy_count,
+        'watch_count':      watch_count,
+        'no_buy_count':     no_buy_count,
     })
 
 
@@ -151,6 +161,7 @@ def analyze_ticker(request, entry_id):
     try:
         analysis = run_analysis_for_ticker(entry.ticker, force=force)
         if analysis:
+            generate_trade_plan(request.user, entry.ticker, analysis)
             messages.success(request, f'Analysis updated for {entry.ticker.symbol}.')
         else:
             messages.warning(request, f'Not enough data for {entry.ticker.symbol}.')
@@ -164,7 +175,7 @@ def analyze_all(request):
     entries = Watchlist.objects.filter(user=request.user).select_related('ticker')
     force   = request.GET.get('force') == '1'
     seen    = set()
-    success = errors = skipped = 0
+    success = errors = 0
     for entry in entries:
         if entry.ticker.symbol in seen:
             success += 1
@@ -175,8 +186,39 @@ def analyze_all(request):
             success += 1
         except Exception:
             errors += 1
+
     label = 'Re-analyzed' if force else 'Analysis complete'
     messages.success(request, f'{label}: {success} updated, {errors} errors.')
+
+    # Generate trade plans for every analyzed ticker
+    for entry in Watchlist.objects.filter(user=request.user).select_related('ticker'):
+        analysis = entry.ticker.latest_analysis()
+        if analysis:
+            generate_trade_plan(request.user, entry.ticker, analysis)
+
+    # Send analysis report email if user has email and toggle is on
+    profile, _ = TradingProfile.objects.get_or_create(user=request.user)
+    if request.user.email and profile.send_analysis_email:
+        analysis_rows = []
+        for entry in Watchlist.objects.filter(user=request.user).select_related('ticker'):
+            analysis = entry.ticker.latest_analysis()
+            analysis_rows.append({'ticker': entry.ticker, 'analysis': analysis})
+
+        # Latest trade plan per ticker (Python-level dedup, avoids SQLite timestamp issues)
+        seen_tickers = set()
+        latest_trades = []
+        for trade in Trade.objects.filter(user=request.user).select_related('ticker', 'analysis').order_by('-created_at'):
+            if trade.ticker_id not in seen_tickers:
+                seen_tickers.add(trade.ticker_id)
+                latest_trades.append(trade)
+        latest_trades.sort(key=lambda t: (-t.rr_ratio, -t.confidence_score))
+
+        try:
+            send_analysis_report_email(request.user, analysis_rows, latest_trades)
+            messages.info(request, f'Analysis report sent to {request.user.email}.')
+        except Exception as e:
+            messages.warning(request, f'Could not send email: {e}')
+
     return redirect('dashboard')
 
 
@@ -224,6 +266,112 @@ def stock_detail(request, entry_id):
         'w52_low':      w52_low,
         'pe_ratio':     pe_ratio,
         'pe_type':      pe_type,
+    })
+
+
+# ─── TRADE PLANS ───────────────────────────────────────────────────────────────
+
+@login_required
+def trade_plans(request):
+    profile, _ = TradingProfile.objects.get_or_create(user=request.user)
+
+    val_filter = request.GET.get('status', '')   # VALID / WATCHLIST / INVALID / ''
+
+    # Latest trade per ticker (Python dedup — avoids SQLite timestamp issues)
+    seen_tickers = set()
+    latest_ids   = []
+    for trade in Trade.objects.filter(user=request.user).order_by('-created_at'):
+        if trade.ticker_id not in seen_tickers:
+            seen_tickers.add(trade.ticker_id)
+            latest_ids.append(trade.id)
+
+    all_latest     = Trade.objects.filter(id__in=latest_ids).select_related('ticker', 'analysis')
+    valid_count    = all_latest.filter(validation_status='VALID').count()
+    watchlist_count= all_latest.filter(validation_status='WATCHLIST').count()
+    invalid_count  = all_latest.filter(validation_status='INVALID').count()
+    total_risk     = sum(t.risk_amount for t in all_latest.filter(validation_status='VALID'))
+
+    qs = all_latest
+    if val_filter in ('VALID', 'WATCHLIST', 'INVALID'):
+        qs = qs.filter(validation_status=val_filter)
+    # Sort: VALID first, then WATCHLIST, then INVALID; within each group by score desc
+    order_map   = {'VALID': 0, 'WATCHLIST': 1, 'INVALID': 2}
+    qs_list     = sorted(qs, key=lambda t: (order_map.get(t.validation_status, 3), -t.confidence_score))
+
+    spy_data = {}
+    try:
+        from .analysis import get_spy_filter
+        spy_data = get_spy_filter()
+    except Exception:
+        pass
+
+    return render(request, 'stocks/trade_plans.html', {
+        'trades':          qs_list,
+        'profile':         profile,
+        'val_filter':      val_filter,
+        'valid_count':     valid_count,
+        'watchlist_count': watchlist_count,
+        'invalid_count':   invalid_count,
+        'total_risk':      round(total_risk, 2),
+        'spy_data':        spy_data,
+    })
+
+
+# ─── PERFORMANCE ───────────────────────────────────────────────────────────────
+
+@login_required
+def performance(request):
+    profile, _ = TradingProfile.objects.get_or_create(user=request.user)
+
+    all_trades = list(
+        Trade.objects
+        .filter(user=request.user)
+        .select_related('ticker')
+        .order_by('exit_date')
+    )
+
+    # Counts by paper_status
+    pending_count = sum(1 for t in all_trades if t.paper_status == 'PENDING' and t.validation_status == 'VALID')
+    active_count  = sum(1 for t in all_trades if t.paper_status == 'ACTIVE')
+    closed_count  = sum(1 for t in all_trades if t.paper_status == 'CLOSED')
+
+    closed_trades = [t for t in all_trades if t.paper_status == 'CLOSED']
+
+    # Overall metrics
+    metrics = compute_metrics(closed_trades)
+
+    # Equity curve
+    equity_curve, final_balance = compute_equity_curve(
+        closed_trades, starting_capital=profile.account_size
+    )
+    equity_dates    = [p['date']    for p in equity_curve]
+    equity_balances = [p['balance'] for p in equity_curve]
+
+    # Breakdowns
+    by_strategy = compute_breakdown(closed_trades, 'strategy_type')
+    by_rvol     = compute_breakdown(closed_trades, 'rvol_bucket')
+    by_rr       = compute_breakdown(closed_trades, 'rr_bucket')
+
+    # Recent closed trades (last 20, newest first)
+    recent_closed = sorted(
+        closed_trades,
+        key=lambda t: t.exit_date or date.min,
+        reverse=True,
+    )[:20]
+
+    return render(request, 'stocks/performance.html', {
+        'profile':          profile,
+        'pending_count':    pending_count,
+        'active_count':     active_count,
+        'closed_count':     closed_count,
+        'metrics':          metrics,
+        'final_balance':    final_balance,
+        'equity_dates':     json.dumps(equity_dates),
+        'equity_balances':  json.dumps(equity_balances),
+        'by_strategy':      by_strategy,
+        'by_rvol':          by_rvol,
+        'by_rr':            by_rr,
+        'recent_closed':    recent_closed,
     })
 
 

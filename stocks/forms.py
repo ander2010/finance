@@ -1,12 +1,12 @@
 from django import forms
-from .models import StockList
+from .models import StockList, TradingProfile
 
 
 class AddTickersForm(forms.Form):
     tickers = forms.CharField(
         widget=forms.TextInput(attrs={
             'class': 'form-input',
-            'placeholder': 'e.g. AAPL, TSLA, NVDA, AAL',
+            'placeholder': 'e.g. AAPL  — or type to filter watchlist',
             'autocomplete': 'off',
         }),
         label='Tickers',
@@ -51,3 +51,30 @@ class AssignListForm(forms.Form):
     def __init__(self, user, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['stock_list'].queryset = StockList.objects.filter(user=user)
+
+
+class TradingProfileForm(forms.ModelForm):
+    account_size = forms.FloatField(
+        min_value=100,
+        label='Account Size ($)',
+        widget=forms.NumberInput(attrs={
+            'class': 'form-input', 'placeholder': '10000', 'step': '100',
+        }),
+    )
+    risk_per_trade_pct = forms.FloatField(
+        min_value=0.1, max_value=10,
+        label='Risk per Trade (%)',
+        widget=forms.NumberInput(attrs={
+            'class': 'form-input', 'placeholder': '1.0', 'step': '0.1',
+        }),
+    )
+
+    send_analysis_email = forms.BooleanField(
+        required=False,
+        label='Send email report after Analyze All',
+        widget=forms.CheckboxInput(attrs={'class': 'w-4 h-4 accent-green-500'}),
+    )
+
+    class Meta:
+        model  = TradingProfile
+        fields = ['account_size', 'risk_per_trade_pct', 'send_analysis_email']

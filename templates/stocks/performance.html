@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{% block title %}Performance — StockAnalyzer{% endblock %}
+
+{% block content %}
+<div class="py-6 space-y-6">
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Strategy Performance</h1>
+      <p class="text-sm text-muted mt-1">Paper trading results — real prices, no hindsight</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{% url 'analyze_all' %}?force=1" class="btn-ghost text-xs">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+        Re-analyze All
+      </a>
+    </div>
+  </div>
+
+  <!-- Trade pipeline summary -->
+  <div class="grid grid-cols-3 gap-3">
+    <div class="card p-4 text-center">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Pending Entry</p>
+      <p class="text-3xl font-bold text-slate-300">{{ pending_count }}</p>
+      <p class="text-xs text-muted mt-1">Waiting for entry fill</p>
+    </div>
+    <div class="card p-4 text-center" style="border-color:rgba(59,130,246,0.3);">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Active</p>
+      <p class="text-3xl font-bold text-blue-400">{{ active_count }}</p>
+      <p class="text-xs text-muted mt-1">In position</p>
+    </div>
+    <div class="card p-4 text-center" style="border-color:rgba(100,116,139,0.3);">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Closed</p>
+      <p class="text-3xl font-bold text-slate-400">{{ closed_count }}</p>
+      <p class="text-xs text-muted mt-1">Completed trades</p>
+    </div>
+  </div>
+
+  {% if not metrics %}
+  <!-- Empty state -->
+  <div class="card p-10 text-center space-y-4">
+    <div class="w-16 h-16 rounded-full flex items-center justify-center mx-auto"
+         style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);">
+      <svg class="w-8 h-8 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+      </svg>
+    </div>
+    <div>
+      <p class="text-white font-semibold text-lg">No closed trades yet</p>
+      <p class="text-muted text-sm mt-1 max-w-md mx-auto">
+        The system is tracking {{ pending_count }} pending setup{{ pending_count|pluralize }} and {{ active_count }} active position{{ active_count|pluralize }}.
+        Results will appear here as trades close (stop hit, target hit, or 15-day limit).
+      </p>
+    </div>
+    <div class="text-xs text-muted space-y-1 mt-2">
+      <p>Run <code class="bg-slate-800 px-1.5 py-0.5 rounded">python manage.py update_trades</code> daily to simulate trade execution</p>
+      <p>Or add it to a cron job: <code class="bg-slate-800 px-1.5 py-0.5 rounded">0 18 * * 1-5 cd /path && python manage.py update_trades</code></p>
+    </div>
+  </div>
+
+  {% else %}
+
+  <!-- Key metrics -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="card p-4 text-center" style="border-color:{% if metrics.win_rate >= 55 %}rgba(34,197,94,0.3){% elif metrics.win_rate >= 45 %}rgba(245,158,11,0.3){% else %}rgba(239,68,68,0.3){% endif %}">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Win Rate</p>
+      <p class="text-3xl font-bold {% if metrics.win_rate >= 55 %}text-green-400{% elif metrics.win_rate >= 45 %}text-amber-400{% else %}text-red-400{% endif %}">
+        {{ metrics.win_rate }}%
+      </p>
+      <p class="text-xs text-muted mt-1">{{ metrics.win_count }}W / {{ metrics.loss_count }}L / {{ metrics.breakeven_count }}BE</p>
+    </div>
+    <div class="card p-4 text-center" style="border-color:{% if metrics.profit_factor and metrics.profit_factor >= 1.5 %}rgba(34,197,94,0.3){% elif metrics.profit_factor and metrics.profit_factor >= 1.0 %}rgba(245,158,11,0.3){% else %}rgba(239,68,68,0.3){% endif %}">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Profit Factor</p>
+      <p class="text-3xl font-bold {% if metrics.profit_factor and metrics.profit_factor >= 1.5 %}text-green-400{% elif metrics.profit_factor and metrics.profit_factor >= 1.0 %}text-amber-400{% else %}text-red-400{% endif %}">
+        {% if metrics.profit_factor %}{{ metrics.profit_factor }}{% else %}—{% endif %}
+      </p>
+      <p class="text-xs text-muted mt-1">Gross wins / gross losses</p>
+    </div>
+    <div class="card p-4 text-center" style="border-color:{% if metrics.expectancy > 0 %}rgba(34,197,94,0.3){% else %}rgba(239,68,68,0.3){% endif %}">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Expectancy</p>
+      <p class="text-3xl font-bold {% if metrics.expectancy > 0 %}text-green-400{% else %}text-red-400{% endif %}">
+        ${{ metrics.expectancy }}
+      </p>
+      <p class="text-xs text-muted mt-1">Per trade average</p>
+    </div>
+    <div class="card p-4 text-center" style="border-color:{% if metrics.total_pnl > 0 %}rgba(34,197,94,0.3){% else %}rgba(239,68,68,0.3){% endif %}">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Total P&amp;L</p>
+      <p class="text-3xl font-bold {% if metrics.total_pnl > 0 %}text-green-400{% else %}text-red-400{% endif %}">
+        {% if metrics.total_pnl > 0 %}+{% endif %}${{ metrics.total_pnl|floatformat:0 }}
+      </p>
+      <p class="text-xs text-muted mt-1">Starting ${{ profile.account_size|floatformat:0 }} → ${{ final_balance|floatformat:0 }}</p>
+    </div>
+  </div>
+
+  <!-- Secondary stats row -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="card px-4 py-3 text-center">
+      <p class="text-xs text-muted mb-1">Avg Win</p>
+      <p class="text-xl font-bold text-green-400">+${{ metrics.avg_win|floatformat:0 }}</p>
+    </div>
+    <div class="card px-4 py-3 text-center">
+      <p class="text-xs text-muted mb-1">Avg Loss</p>
+      <p class="text-xl font-bold text-red-400">-${{ metrics.avg_loss|floatformat:0 }}</p>
+    </div>
+    <div class="card px-4 py-3 text-center">
+      <p class="text-xs text-muted mb-1">Avg R:R</p>
+      <p class="text-xl font-bold text-white">{{ metrics.avg_rr|floatformat:2 }}x</p>
+    </div>
+    <div class="card px-4 py-3 text-center">
+      <p class="text-xs text-muted mb-1">Avg Hold</p>
+      <p class="text-xl font-bold text-white">{{ metrics.avg_days|floatformat:1 }}d</p>
+    </div>
+  </div>
+
+  <!-- Equity curve -->
+  <div class="card p-5">
+    <h2 class="text-sm font-bold text-white uppercase tracking-wide mb-4">Equity Curve</h2>
+    <div id="equityChart"></div>
+  </div>
+
+  <!-- Breakdowns -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+    <!-- By strategy -->
+    <div class="card p-4">
+      <h2 class="text-xs font-bold text-white uppercase tracking-wide mb-3">By Strategy</h2>
+      {% if by_strategy %}
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-muted border-b border-slate-700">
+            <th class="text-left pb-2">Strategy</th>
+            <th class="text-right pb-2">Trades</th>
+            <th class="text-right pb-2">Win%</th>
+            <th class="text-right pb-2">PF</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800">
+          {% for label, m in by_strategy.items %}
+          {% if m %}
+          <tr>
+            <td class="py-1.5 font-medium text-slate-300">{{ label }}</td>
+            <td class="py-1.5 text-right text-muted">{{ m.total }}</td>
+            <td class="py-1.5 text-right font-semibold {% if m.win_rate >= 55 %}text-green-400{% elif m.win_rate >= 45 %}text-amber-400{% else %}text-red-400{% endif %}">{{ m.win_rate }}%</td>
+            <td class="py-1.5 text-right font-semibold {% if m.profit_factor and m.profit_factor >= 1.5 %}text-green-400{% elif m.profit_factor and m.profit_factor >= 1.0 %}text-amber-400{% else %}text-red-400{% endif %}">{% if m.profit_factor %}{{ m.profit_factor }}{% else %}—{% endif %}</td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted text-xs">No data yet.</p>
+      {% endif %}
+    </div>
+
+    <!-- By RVOL -->
+    <div class="card p-4">
+      <h2 class="text-xs font-bold text-white uppercase tracking-wide mb-3">By Volume (RVOL)</h2>
+      {% if by_rvol %}
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-muted border-b border-slate-700">
+            <th class="text-left pb-2">Volume</th>
+            <th class="text-right pb-2">Trades</th>
+            <th class="text-right pb-2">Win%</th>
+            <th class="text-right pb-2">PF</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800">
+          {% for label, m in by_rvol.items %}
+          {% if m %}
+          <tr>
+            <td class="py-1.5 font-medium text-slate-300">{{ label }}</td>
+            <td class="py-1.5 text-right text-muted">{{ m.total }}</td>
+            <td class="py-1.5 text-right font-semibold {% if m.win_rate >= 55 %}text-green-400{% elif m.win_rate >= 45 %}text-amber-400{% else %}text-red-400{% endif %}">{{ m.win_rate }}%</td>
+            <td class="py-1.5 text-right font-semibold {% if m.profit_factor and m.profit_factor >= 1.5 %}text-green-400{% elif m.profit_factor and m.profit_factor >= 1.0 %}text-amber-400{% else %}text-red-400{% endif %}">{% if m.profit_factor %}{{ m.profit_factor }}{% else %}—{% endif %}</td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted text-xs">No data yet.</p>
+      {% endif %}
+    </div>
+
+    <!-- By R:R -->
+    <div class="card p-4">
+      <h2 class="text-xs font-bold text-white uppercase tracking-wide mb-3">By R:R Range</h2>
+      {% if by_rr %}
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-muted border-b border-slate-700">
+            <th class="text-left pb-2">R:R</th>
+            <th class="text-right pb-2">Trades</th>
+            <th class="text-right pb-2">Win%</th>
+            <th class="text-right pb-2">Exp$</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800">
+          {% for label, m in by_rr.items %}
+          {% if m %}
+          <tr>
+            <td class="py-1.5 font-medium text-slate-300">{{ label }}</td>
+            <td class="py-1.5 text-right text-muted">{{ m.total }}</td>
+            <td class="py-1.5 text-right font-semibold {% if m.win_rate >= 55 %}text-green-400{% elif m.win_rate >= 45 %}text-amber-400{% else %}text-red-400{% endif %}">{{ m.win_rate }}%</td>
+            <td class="py-1.5 text-right font-semibold {% if m.expectancy > 0 %}text-green-400{% else %}text-red-400{% endif %}">{% if m.expectancy > 0 %}+{% endif %}${{ m.expectancy|floatformat:0 }}</td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted text-xs">No data yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Recent closed trades -->
+  {% if recent_closed %}
+  <div class="card overflow-hidden">
+    <div class="px-5 py-3 border-b border-slate-700">
+      <h2 class="text-sm font-bold text-white uppercase tracking-wide">Recent Closed Trades</h2>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-muted" style="background:rgba(15,23,42,0.5);">
+            <th class="text-left px-4 py-2.5">Ticker</th>
+            <th class="text-left px-4 py-2.5">Strategy</th>
+            <th class="text-right px-4 py-2.5">Entry</th>
+            <th class="text-right px-4 py-2.5">Exit</th>
+            <th class="text-right px-4 py-2.5">R:R</th>
+            <th class="text-right px-4 py-2.5">Days</th>
+            <th class="text-right px-4 py-2.5">P&amp;L $</th>
+            <th class="text-right px-4 py-2.5">P&amp;L %</th>
+            <th class="text-center px-4 py-2.5">Result</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800">
+          {% for trade in recent_closed %}
+          <tr class="table-row">
+            <td class="px-4 py-2.5 font-bold
+              {% if trade.outcome == 'WIN' %}text-green-400{% elif trade.outcome == 'LOSS' %}text-red-400{% else %}text-slate-400{% endif %}">
+              {{ trade.ticker.symbol }}
+            </td>
+            <td class="px-4 py-2.5 text-muted">{{ trade.get_strategy_type_display }}</td>
+            <td class="px-4 py-2.5 text-right font-mono text-white">${{ trade.entry_price|floatformat:2 }}</td>
+            <td class="px-4 py-2.5 text-right font-mono text-white">{% if trade.exit_price %}${{ trade.exit_price|floatformat:2 }}{% else %}—{% endif %}</td>
+            <td class="px-4 py-2.5 text-right text-muted">{{ trade.rr_ratio|floatformat:1 }}x</td>
+            <td class="px-4 py-2.5 text-right text-muted">{% if trade.days_held %}{{ trade.days_held }}d{% else %}—{% endif %}</td>
+            <td class="px-4 py-2.5 text-right font-mono font-semibold
+              {% if trade.pnl_dollars and trade.pnl_dollars > 0 %}text-green-400{% elif trade.pnl_dollars and trade.pnl_dollars < 0 %}text-red-400{% else %}text-muted{% endif %}">
+              {% if trade.pnl_dollars %}{% if trade.pnl_dollars > 0 %}+{% endif %}${{ trade.pnl_dollars|floatformat:0 }}{% else %}—{% endif %}
+            </td>
+            <td class="px-4 py-2.5 text-right font-mono
+              {% if trade.pnl_percent and trade.pnl_percent > 0 %}text-green-400{% elif trade.pnl_percent and trade.pnl_percent < 0 %}text-red-400{% else %}text-muted{% endif %}">
+              {% if trade.pnl_percent %}{% if trade.pnl_percent > 0 %}+{% endif %}{{ trade.pnl_percent|floatformat:1 }}%{% else %}—{% endif %}
+            </td>
+            <td class="px-4 py-2.5 text-center">
+              <span class="px-2 py-0.5 rounded text-xs font-bold
+                {% if trade.outcome == 'WIN' %}badge-buy{% elif trade.outcome == 'LOSS' %}badge-no-buy{% else %}badge-watch{% endif %}">
+                {{ trade.outcome }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% endif %}{# end if metrics #}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{% if metrics %}
+<script>
+(function () {
+  var dates    = {{ equity_dates|safe }};
+  var balances = {{ equity_balances|safe }};
+  var startCap = {{ profile.account_size }};
+
+  var colors = balances.map(function(b) {
+    return b >= startCap ? '#22C55E' : '#EF4444';
+  });
+
+  var options = {
+    series: [{ name: 'Balance', data: balances }],
+    chart: {
+      type: 'area',
+      height: 260,
+      background: 'transparent',
+      toolbar: { show: false },
+      animations: { enabled: false },
+    },
+    theme: { mode: 'dark' },
+    stroke: { curve: 'smooth', width: 2, colors: ['#22C55E'] },
+    fill: {
+      type: 'gradient',
+      gradient: {
+        shadeIntensity: 1,
+        opacityFrom: 0.25,
+        opacityTo: 0.02,
+        stops: [0, 100],
+        colorStops: [
+          { offset: 0,   color: '#22C55E', opacity: 0.3 },
+          { offset: 100, color: '#22C55E', opacity: 0.0 },
+        ],
+      },
+    },
+    dataLabels: { enabled: false },
+    xaxis: {
+      categories: dates,
+      labels: { style: { colors: '#64748B', fontSize: '11px' }, rotate: -30 },
+      axisBorder: { show: false },
+      axisTicks: { show: false },
+    },
+    yaxis: {
+      labels: {
+        style: { colors: '#64748B', fontSize: '11px' },
+        formatter: function(v) { return '$' + Math.round(v).toLocaleString(); },
+      },
+    },
+    grid: { borderColor: '#1E293B', strokeDashArray: 3 },
+    tooltip: {
+      theme: 'dark',
+      y: { formatter: function(v) { return '$' + v.toFixed(2); } },
+    },
+    annotations: {
+      yaxis: [{
+        y: startCap,
+        borderColor: '#475569',
+        borderWidth: 1,
+        strokeDashArray: 4,
+        label: {
+          text: 'Start $' + startCap.toLocaleString(),
+          style: { color: '#94A3B8', background: '#1E293B', fontSize: '10px' },
+        },
+      }],
+    },
+  };
+
+  new ApexCharts(document.getElementById('equityChart'), options).render();
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -258,9 +258,71 @@ def strategy_sma9_pullback(df: pd.DataFrame, window: int = 20) -> dict:
     return result
 
 
+# ─── MARKET STRUCTURE & MARKET FILTER ─────────────────────────────────────────
+
+def detect_market_structure(df: pd.DataFrame, window: int = 20) -> dict:
+    """Detect higher-highs / higher-lows over the last `window` bars."""
+    if len(df) < window:
+        return {'bullish': False, 'hh_ratio': 0.0, 'hl_ratio': 0.0}
+    recent = df.tail(window)
+    highs  = recent['high'].values
+    lows   = recent['low'].values
+    n      = len(highs) - 1
+    hh = sum(1 for i in range(1, len(highs)) if highs[i] > highs[i - 1])
+    hl = sum(1 for i in range(1, len(lows))  if lows[i]  > lows[i - 1])
+    hh_ratio = round(hh / n, 2) if n else 0.0
+    hl_ratio = round(hl / n, 2) if n else 0.0
+    return {
+        'bullish':  hh_ratio >= 0.5 and hl_ratio >= 0.5,
+        'hh_ratio': hh_ratio,
+        'hl_ratio': hl_ratio,
+    }
+
+
+_spy_cache: dict = {}
+
+def get_spy_filter() -> dict:
+    """Return whether SPY is trading above its 200-day SMA (market health check).
+    Result is cached in memory for 1 hour to avoid repeated yfinance calls."""
+    from datetime import datetime
+    global _spy_cache
+
+    cached_at = _spy_cache.get('ts')
+    if cached_at and (datetime.now() - cached_at).seconds < 3600:
+        return _spy_cache['data']
+
+    default = {'above_sma200': True, 'above_sma50': True, 'spy_close': None, 'spy_sma200': None, 'spy_sma50': None}
+    try:
+        spy_ticker, _ = Ticker.objects.get_or_create(symbol='SPY')
+        df = fetch_and_store_prices(spy_ticker)
+        df = compute_indicators(df)
+        if df.empty:
+            _spy_cache = {'ts': datetime.now(), 'data': default}
+            return default
+        today      = df.iloc[-1]
+        spy_close  = float(today['close'])
+        sma200_raw = today.get('sma200', float('nan'))
+        spy_sma200 = float(sma200_raw) if not pd.isna(sma200_raw) else None
+        sma50_raw  = today.get('sma50', float('nan'))
+        spy_sma50  = float(sma50_raw) if not pd.isna(sma50_raw) else None
+        result = {
+            'above_sma200': spy_sma200 is not None and spy_close > spy_sma200,
+            'above_sma50':  spy_sma50  is not None and spy_close > spy_sma50,
+            'spy_close':    round(spy_close, 2),
+            'spy_sma200':   round(spy_sma200, 2) if spy_sma200 else None,
+            'spy_sma50':    round(spy_sma50,  2) if spy_sma50  else None,
+        }
+    except Exception:
+        result = default
+
+    _spy_cache = {'ts': datetime.now(), 'data': result}
+    return result
+
+
 # ─── SCORING ───────────────────────────────────────────────────────────────────
 
-def compute_score(strategies: list, df: pd.DataFrame, sma9_data: dict) -> int:
+def compute_score(strategies: list, df: pd.DataFrame, sma9_data: dict,
+                  structure: dict = None, spy_above_sma200: bool = True) -> int:
     today = df.iloc[-1]
     close = float(today['close'])
     rsi   = float(today['rsi'])
@@ -303,6 +365,17 @@ def compute_score(strategies: list, df: pd.DataFrame, sma9_data: dict) -> int:
     # Below SMA200 penalty — buying in a confirmed downtrend
     if sma200 and close < sma200:
         score -= 25
+
+    # Market structure: higher-highs / higher-lows
+    if structure:
+        if structure.get('bullish'):
+            score += 10
+        else:
+            score -= 15
+
+    # SPY market filter: bearish market = reduce score
+    if not spy_above_sma200:
+        score -= 20
 
     return max(0, min(score, 100))
 
@@ -462,14 +535,24 @@ def run_analysis_for_ticker(ticker: Ticker, force: bool = False) -> Optional[Tic
         strategies.append('Capitulation + Reversal')
 
     sma9_data = strategy_sma9_pullback(df)
+    structure = detect_market_structure(df)
+    spy       = get_spy_filter()
 
-    score  = compute_score(strategies, df, sma9_data)
+    score  = compute_score(strategies, df, sma9_data,
+                           structure=structure, spy_above_sma200=spy['above_sma200'])
     signal = 'BUY' if score >= 70 else 'WATCH' if score >= 40 else 'NO_BUY'
 
     today_row     = df.iloc[-1]
     current_price = round(float(today_row['close']), 2)
     entry, stop_loss, take_profit, rr = compute_trading_levels(df, strategies, sma9_data)
     explanation = build_explanation(strategies, score, df, sma9_data)
+
+    market_structure_data = {
+        **structure,
+        'spy_above_sma200': spy['above_sma200'],
+        'spy_close':        spy['spy_close'],
+        'spy_sma200':       spy['spy_sma200'],
+    }
 
     analysis, _ = TickerAnalysis.objects.update_or_create(
         ticker=ticker,
@@ -484,6 +567,7 @@ def run_analysis_for_ticker(ticker: Ticker, force: bool = False) -> Optional[Tic
             'risk_reward_ratio':    rr,
             'strategies_triggered': strategies,
             'sma9_data':            sma9_data,
+            'market_structure':     market_structure_data,
             'explanation':          explanation,
         }
     )

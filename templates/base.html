@@ -203,17 +203,29 @@
       </svg>
       Dashboard
     </a>
+    <a href="{% url 'trade_plans' %}" class="nav-link flex items-center gap-1.5">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+      </svg>
+      Trade Plans
+    </a>
+    <a href="{% url 'performance' %}" class="nav-link flex items-center gap-1.5">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+      </svg>
+      Performance
+    </a>
   </div>
 
   <!-- Right: user + logout -->
   <div class="flex items-center gap-3">
-    <div class="hidden sm:flex items-center gap-2 text-sm text-muted">
+    <a href="{% url 'profile' %}" class="hidden sm:flex items-center gap-2 text-sm text-muted hover:text-white transition-colors">
       <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
            style="background: rgba(34,197,94,0.2); color: #22C55E; border: 1px solid rgba(34,197,94,0.3);">
         {{ user.username|first|upper }}
       </div>
-      <span>{{ user.username }}</span>
-    </div>
+      <span>{{ user.get_full_name|default:user.username }}</span>
+    </a>
     <a href="{% url 'logout' %}" class="btn-ghost text-xs px-3 py-2">
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>

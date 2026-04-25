@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}Trade Plans — StockAnalyzer{% endblock %}
+
+{% block content %}
+<div class="py-6 space-y-5">
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Trade Plans</h1>
+      <p class="text-sm text-muted mt-1">
+        Account: <strong class="text-white">${{ profile.account_size|floatformat:0 }}</strong>
+        &nbsp;·&nbsp; Risk/trade: <strong class="text-white">{{ profile.risk_per_trade_pct }}%</strong>
+        &nbsp;·&nbsp; Max loss/trade: <strong class="text-amber-400">${{ profile.dollar_risk|floatformat:2 }}</strong>
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{% url 'analyze_all' %}?force=1" class="btn-ghost text-xs">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+        Re-analyze All
+      </a>
+      <a href="{% url 'profile' %}" class="btn-ghost text-xs">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        Settings
+      </a>
+    </div>
+  </div>
+
+  <!-- SPY market filter banner -->
+  {% if spy_data %}
+  <div class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium
+    {% if spy_data.above_sma200 %}msg-success{% else %}msg-warning{% endif %}">
+    <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      {% if spy_data.above_sma200 %}<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+      {% else %}<polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/>{% endif %}
+    </svg>
+    <span>
+      <strong>Market Filter (SPY):</strong>
+      {% if spy_data.above_sma200 %}
+        Bullish — SPY ${{ spy_data.spy_close }} above SMA200 ${{ spy_data.spy_sma200 }}. Long setups enabled.
+      {% else %}
+        Bearish — SPY ${{ spy_data.spy_close }} below SMA200 ${{ spy_data.spy_sma200 }}. All BUY trades are blocked.
+      {% endif %}
+    </span>
+  </div>
+  {% endif %}
+
+  <!-- Summary cards -->
+  <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+    <div class="card p-4 text-center" style="border-color:rgba(34,197,94,0.3);">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Valid</p>
+      <p class="text-3xl font-bold text-green-400">{{ valid_count }}</p>
+    </div>
+    <div class="card p-4 text-center" style="border-color:rgba(245,158,11,0.3);">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Watchlist</p>
+      <p class="text-3xl font-bold text-amber-400">{{ watchlist_count }}</p>
+    </div>
+    <div class="card p-4 text-center" style="border-color:rgba(239,68,68,0.2);">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Invalid</p>
+      <p class="text-3xl font-bold text-red-400">{{ invalid_count }}</p>
+    </div>
+    <div class="card p-4 text-center">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Total $ at Risk</p>
+      <p class="text-3xl font-bold text-amber-400">${{ total_risk|floatformat:0 }}</p>
+    </div>
+    <div class="card p-4 text-center">
+      <p class="text-xs text-muted uppercase tracking-wide mb-1">Per Trade</p>
+      <p class="text-3xl font-bold text-white">${{ profile.dollar_risk|floatformat:0 }}</p>
+    </div>
+  </div>
+
+  <!-- Filter pills -->
+  <div class="flex flex-wrap gap-2 text-xs font-semibold">
+    <a href="{% url 'trade_plans' %}"
+       class="px-3 py-1.5 rounded-full border transition-colors
+         {% if not val_filter %}border-slate-400 text-white bg-slate-700{% else %}border-slate-600 text-muted hover:border-slate-400{% endif %}">
+      All ({{ trades|length }})
+    </a>
+    <a href="?status=VALID"
+       class="px-3 py-1.5 rounded-full border transition-colors
+         {% if val_filter == 'VALID' %}border-green-500 text-green-400 bg-green-500/10{% else %}border-slate-600 text-muted hover:border-slate-400{% endif %}">
+      ✅ Valid ({{ valid_count }})
+    </a>
+    <a href="?status=WATCHLIST"
+       class="px-3 py-1.5 rounded-full border transition-colors
+         {% if val_filter == 'WATCHLIST' %}border-amber-500 text-amber-400 bg-amber-500/10{% else %}border-slate-600 text-muted hover:border-slate-400{% endif %}">
+      👁 Watchlist ({{ watchlist_count }})
+    </a>
+    <a href="?status=INVALID"
+       class="px-3 py-1.5 rounded-full border transition-colors
+         {% if val_filter == 'INVALID' %}border-red-500 text-red-400 bg-red-500/10{% else %}border-slate-600 text-muted hover:border-slate-400{% endif %}">
+      ✗ Invalid ({{ invalid_count }})
+    </a>
+  </div>
+
+  {% if not trades %}
+  <div class="card p-10 text-center">
+    <p class="text-muted text-sm mb-4">No trade plans yet. Run analysis to generate validated setups.</p>
+    <a href="{% url 'analyze_all' %}" class="btn-primary">Run Analysis Now</a>
+  </div>
+  {% else %}
+
+  <!-- Trade cards -->
+  <div class="space-y-3">
+    {% for trade in trades %}
+    <div class="card overflow-hidden
+      {% if trade.validation_status == 'VALID' %}border-green-500/40
+      {% elif trade.validation_status == 'WATCHLIST' %}border-amber-500/40
+      {% else %}border-red-900/40 opacity-75{% endif %}"
+      style="border-left-width:3px;">
+
+      <!-- Card header row -->
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3"
+           style="background:{% if trade.validation_status == 'VALID' %}rgba(34,197,94,0.06){% elif trade.validation_status == 'WATCHLIST' %}rgba(245,158,11,0.06){% else %}rgba(239,68,68,0.04){% endif %}">
+
+        <!-- Ticker + strategy -->
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="text-lg font-bold
+            {% if trade.validation_status == 'VALID' %}text-green-400
+            {% elif trade.validation_status == 'WATCHLIST' %}text-amber-400
+            {% else %}text-red-400{% endif %}">
+            {{ trade.ticker.symbol }}
+          </span>
+          <span class="px-2 py-0.5 rounded text-xs font-semibold
+            {% if trade.strategy_type == 'breakout' %}bg-purple-500/15 text-purple-400
+            {% else %}bg-blue-500/15 text-blue-400{% endif %}">
+            {{ trade.get_strategy_type_display }}
+          </span>
+        </div>
+
+        <!-- Validation status badge -->
+        <span class="px-3 py-1 rounded-full text-xs font-bold tracking-wide
+          {% if trade.validation_status == 'VALID' %}badge-buy
+          {% elif trade.validation_status == 'WATCHLIST' %}badge-watch
+          {% else %}badge-no-buy{% endif %}">
+          {{ trade.validation_status }}
+        </span>
+
+        <!-- Score with breakdown tooltip -->
+        <div class="relative group cursor-default ml-auto">
+          <span class="text-sm font-bold
+            {% if trade.confidence_score >= 70 %}text-green-400
+            {% elif trade.confidence_score >= 45 %}text-amber-400
+            {% else %}text-red-400{% endif %}">
+            {{ trade.confidence_score }}<span class="text-muted font-normal text-xs">/100</span>
+          </span>
+          {% if trade.score_breakdown %}
+          {% with b=trade.score_breakdown %}
+          <div class="absolute right-0 top-6 z-20 opacity-0 group-hover:opacity-100 transition-opacity
+               rounded-lg p-3 text-xs w-56 pointer-events-none"
+               style="background:#0F172A;border:1px solid #334155;min-width:13rem;">
+            <div class="flex justify-between py-0.5"><span class="text-muted">Trend</span><span class="text-white font-semibold">{{ b.trend }}/20</span></div>
+            <div class="flex justify-between py-0.5"><span class="text-muted">Structure</span><span class="text-white font-semibold">{{ b.structure }}/20</span></div>
+            <div class="flex justify-between py-0.5"><span class="text-muted">RSI</span><span class="text-white font-semibold">{{ b.rsi }}/15</span></div>
+            <div class="flex justify-between py-0.5"><span class="text-muted">Volume</span><span class="text-white font-semibold">{{ b.volume }}/15</span></div>
+            <div class="flex justify-between py-0.5"><span class="text-muted">S/R</span><span class="text-white font-semibold">{{ b.sr }}/20</span></div>
+            <div class="flex justify-between py-0.5"><span class="text-muted">SPY</span><span class="text-white font-semibold">{{ b.spy }}/10</span></div>
+            <div class="flex justify-between py-0.5 mt-1 pt-1 font-semibold" style="border-top:1px solid #334155;">
+              <span class="text-slate-300">Base score</span>
+              <span class="text-amber-400">{{ b.base_score }}</span>
+            </div>
+            {% if b.issues %}
+            <div class="mt-1 pt-1 space-y-0.5" style="border-top:1px solid #334155;">
+              {% for issue in b.issues %}
+              <div class="text-red-400">⚠ {{ issue }}</div>
+              {% endfor %}
+            </div>
+            <div class="flex justify-between py-0.5 mt-0.5">
+              <span class="text-red-400">Penalty factor</span>
+              <span class="text-red-400 font-bold">×{{ b.penalty_factor }}</span>
+            </div>
+            {% endif %}
+            <div class="flex justify-between py-0.5 mt-1 pt-1 font-bold" style="border-top:1px solid #334155;">
+              <span class="text-white">Final score</span>
+              <span class="{% if b.final_score >= 70 %}text-green-400{% elif b.final_score >= 40 %}text-amber-400{% else %}text-red-400{% endif %}">{{ b.final_score }}</span>
+            </div>
+          </div>
+          {% endwith %}
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Trade numbers row -->
+      {% if trade.validation_status != 'INVALID' %}
+      <div class="grid grid-cols-4 sm:grid-cols-8 gap-0 divide-x divide-slate-800 text-center text-xs">
+        <div class="px-3 py-2.5">
+          <p class="text-muted mb-0.5">Entry</p>
+          <p class="font-bold text-white font-mono">${{ trade.entry_price|floatformat:2 }}</p>
+        </div>
+        <div class="px-3 py-2.5">
+          <p class="text-muted mb-0.5">Stop</p>
+          <p class="font-bold text-red-400 font-mono">${{ trade.stop_loss|floatformat:2 }}</p>
+        </div>
+        <div class="px-3 py-2.5">
+          <p class="text-muted mb-0.5">Target</p>
+          <p class="font-bold text-green-400 font-mono">${{ trade.target_price|floatformat:2 }}</p>
+        </div>
+        <div class="px-3 py-2.5">
+          <p class="text-muted mb-0.5">R:R</p>
+          <p class="font-bold font-mono
+            {% if trade.rr_ratio >= 2.0 %}text-green-400{% elif trade.rr_ratio >= 1.5 %}text-amber-400{% else %}text-red-400{% endif %}">
+            {{ trade.rr_ratio|floatformat:1 }}x
+          </p>
+        </div>
+        <div class="px-3 py-2.5">
+          <p class="text-muted mb-0.5">Shares</p>
+          <p class="font-bold text-white font-mono">{{ trade.position_size }}</p>
+        </div>
+        <div class="px-3 py-2.5">
+          <p class="text-muted mb-0.5">Risk $</p>
+          <p class="font-bold text-red-400 font-mono">${{ trade.risk_amount|floatformat:0 }}</p>
+        </div>
+        <div class="px-3 py-2.5">
+          <p class="text-muted mb-0.5">Reward $</p>
+          <p class="font-bold text-green-400 font-mono">${{ trade.reward_amount|floatformat:0 }}</p>
+        </div>
+        <div class="px-3 py-2.5">
+          <p class="text-muted mb-0.5">Support</p>
+          <p class="font-bold text-slate-300 font-mono">{% if trade.support_level %}${{ trade.support_level|floatformat:2 }}{% else %}—{% endif %}</p>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Volume strip -->
+      {% if trade.relative_volume is not None %}
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-1 px-5 py-2 text-xs"
+           style="border-top:1px solid #1E293B;background:rgba(15,23,42,0.5);">
+        <span class="text-muted font-semibold uppercase tracking-wide">Volume</span>
+        <span class="font-mono">
+          RVOL <strong class="
+            {% if trade.volume_quality == 'Strong' %}text-green-400
+            {% elif trade.volume_quality == 'Neutral' %}text-amber-400
+            {% else %}text-red-400{% endif %}">
+            {{ trade.relative_volume|floatformat:2 }}
+          </strong>
+        </span>
+        <span class="px-2 py-0.5 rounded font-bold
+          {% if trade.volume_quality == 'Strong' %}bg-green-500/10 text-green-400
+          {% elif trade.volume_quality == 'Neutral' %}bg-amber-500/10 text-amber-400
+          {% else %}bg-red-500/10 text-red-400{% endif %}">
+          {{ trade.volume_quality }}
+        </span>
+        <span class="text-muted font-mono ml-auto text-xs">
+          {{ trade.current_volume|floatformat:0 }} &nbsp;/&nbsp; avg {{ trade.avg_volume_20|floatformat:0 }}
+        </span>
+      </div>
+      {% endif %}
+
+      <!-- Validation reasons (always shown) -->
+      {% if trade.validation_reasons %}
+      <div class="px-5 py-3 space-y-1" style="border-top:1px solid #1E293B;">
+        {% for reason in trade.validation_reasons.pass %}
+        <p class="text-xs text-green-400/80">
+          <span class="font-bold mr-1">✓</span>{{ reason }}
+        </p>
+        {% endfor %}
+        {% for reason in trade.validation_reasons.fail %}
+        <p class="text-xs text-red-400/80">
+          <span class="font-bold mr-1">✗</span>{{ reason }}
+        </p>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Execution-ready card (first VALID trade) -->
+  {% for trade in trades %}
+  {% if trade.validation_status == 'VALID' %}
+  <div class="card p-5 mt-2" style="border-color:rgba(34,197,94,0.4);background:rgba(34,197,94,0.04);">
+    <p class="text-xs text-green-500 uppercase tracking-widest font-bold mb-3">Execute This Trade</p>
+    <div class="font-mono text-sm space-y-1.5">
+      <p><span class="text-muted w-32 inline-block">Ticker:</span> <strong class="text-green-400 text-base">{{ trade.ticker.symbol }}</strong> <span class="text-muted text-xs ml-2">{{ trade.get_strategy_type_display }}</span></p>
+      <p><span class="text-muted w-32 inline-block">BUY at:</span> <strong class="text-white">${{ trade.entry_price|floatformat:2 }}</strong></p>
+      <p><span class="text-muted w-32 inline-block">Stop Loss:</span> <strong class="text-red-400">${{ trade.stop_loss|floatformat:2 }}</strong>{% if trade.support_level %} <span class="text-xs text-muted ml-2">(below support ${{ trade.support_level|floatformat:2 }})</span>{% endif %}</p>
+      <p><span class="text-muted w-32 inline-block">Target:</span> <strong class="text-green-400">${{ trade.target_price|floatformat:2 }}</strong>{% if trade.resistance_level %} <span class="text-xs text-muted ml-2">(below resistance ${{ trade.resistance_level|floatformat:2 }})</span>{% endif %}</p>
+      <p><span class="text-muted w-32 inline-block">Position:</span> <strong class="text-white">{{ trade.position_size }} shares</strong></p>
+      <p><span class="text-muted w-32 inline-block">Max Risk:</span> <strong class="text-red-400">${{ trade.risk_amount|floatformat:2 }}</strong></p>
+      <p><span class="text-muted w-32 inline-block">Potential:</span> <strong class="text-green-400">${{ trade.reward_amount|floatformat:2 }}</strong></p>
+      <p><span class="text-muted w-32 inline-block">R:R:</span> <strong class="text-amber-400">{{ trade.rr_ratio|floatformat:1 }}</strong></p>
+      <p><span class="text-muted w-32 inline-block">Confidence:</span> <strong class="text-white">{{ trade.confidence_score }}/100</strong></p>
+      {% if trade.relative_volume %}
+      <p><span class="text-muted w-32 inline-block">Volume RVOL:</span>
+        <strong class="{% if trade.volume_quality == 'Strong' %}text-green-400{% elif trade.volume_quality == 'Neutral' %}text-amber-400{% else %}text-red-400{% endif %}">
+          {{ trade.relative_volume|floatformat:2 }} ({{ trade.volume_quality }})
+        </strong>
+      </p>
+      {% endif %}
+    </div>
+  </div>
+  {% if forloop.first %}{% endif %}
+  {% endif %}
+  {% endfor %}
+
+  {% endif %}
+</div>
+{% endblock %}

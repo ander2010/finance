@@ -1,8 +1,11 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib import messages
-from .forms import RegisterForm
+from .forms import RegisterForm, ProfileForm
+from stocks.models import TradingProfile
+from stocks.forms import TradingProfileForm
 
 
 def register_view(request):
@@ -46,3 +49,28 @@ def login_view(request):
 def logout_view(request):
     logout(request)
     return redirect('login')
+
+
+@login_required
+def profile_view(request):
+    trading_profile, _ = TradingProfile.objects.get_or_create(user=request.user)
+
+    if request.method == 'POST':
+        form         = ProfileForm(request.POST, instance=request.user)
+        trading_form = TradingProfileForm(request.POST, instance=trading_profile)
+        if form.is_valid() and trading_form.is_valid():
+            form.save()
+            trading_form.save()
+            messages.success(request, 'Profile updated successfully.')
+            return redirect('profile')
+        else:
+            messages.error(request, 'Please fix the errors below.')
+    else:
+        form         = ProfileForm(instance=request.user)
+        trading_form = TradingProfileForm(instance=trading_profile)
+
+    return render(request, 'users/profile.html', {
+        'form':         form,
+        'trading_form': trading_form,
+        'profile':      trading_profile,
+    })
