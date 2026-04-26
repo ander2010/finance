@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / '.env')
@@ -55,11 +56,31 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'stockanalyzer.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+def database_config_from_url(database_url):
+    parsed = urlparse(database_url)
+    if parsed.scheme not in ('postgres', 'postgresql'):
+        raise RuntimeError('DATABASE_URL must be a PostgreSQL URL.')
+
+    return {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': unquote(parsed.path.lstrip('/')),
+        'USER': unquote(parsed.username or ''),
+        'PASSWORD': unquote(parsed.password or ''),
+        'HOST': parsed.hostname or '',
+        'PORT': parsed.port or 5432,
+        'CONN_MAX_AGE': 600,
+        'OPTIONS': {
+            'sslmode': 'require',
+        },
     }
+
+
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    raise RuntimeError('DATABASE_URL is required. Configure it in .env or the deployment environment.')
+
+DATABASES = {
+    'default': database_config_from_url(DATABASE_URL),
 }
 
 AUTH_PASSWORD_VALIDATORS = [
