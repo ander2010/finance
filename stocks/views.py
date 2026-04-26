@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.core.paginator import Paginator
 from django.db.models import Max, Min
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 from .models import Ticker, Watchlist, TickerAnalysis, StockList, Trade, TradingProfile
 from .forms import AddTickersForm, CreateListForm, AssignListForm
@@ -17,6 +18,7 @@ from .services.performance import compute_metrics, compute_equity_curve, compute
 from .email_utils import send_analysis_report_email
 
 PAGE_SIZE = 50
+ANALYZE_ALL_SESSION_KEY = 'stocks_analyze_all_job'
 
 
 @login_required
@@ -172,54 +174,141 @@ def analyze_ticker(request, entry_id):
 
 @login_required
 def analyze_all(request):
-    entries = Watchlist.objects.filter(user=request.user).select_related('ticker')
-    force   = request.GET.get('force') == '1'
-    seen    = set()
-    success = errors = 0
-    for entry in entries:
-        if entry.ticker.symbol in seen:
-            success += 1
-            continue
-        seen.add(entry.ticker.symbol)
-        try:
-            run_analysis_for_ticker(entry.ticker, force=force)
-            success += 1
-        except Exception:
-            errors += 1
+    if request.GET.get('cancel') == '1':
+        request.session.pop(ANALYZE_ALL_SESSION_KEY, None)
+        request.session.modified = True
+        messages.warning(request, 'Batch analysis cancelled.')
+        return redirect('dashboard')
 
-    label = 'Re-analyzed' if force else 'Analysis complete'
-    messages.success(request, f'{label}: {success} updated, {errors} errors.')
+    if request.GET.get('step') != '1' or ANALYZE_ALL_SESSION_KEY not in request.session:
+        return _start_analyze_all_job(request, force=request.GET.get('force') == '1')
 
-    # Generate trade plans for every analyzed ticker
-    for entry in Watchlist.objects.filter(user=request.user).select_related('ticker'):
-        analysis = entry.ticker.latest_analysis()
+    job = request.session.get(ANALYZE_ALL_SESSION_KEY)
+    if not job:
+        return _start_analyze_all_job(request, force=False)
+
+    ticker_ids = job.get('ticker_ids', [])
+    total      = len(ticker_ids)
+    index      = int(job.get('index', 0))
+
+    if index >= total:
+        return _finish_analyze_all_job(request, job)
+
+    try:
+        ticker = Ticker.objects.get(id=ticker_ids[index])
+        analysis = run_analysis_for_ticker(ticker, force=job.get('force', False))
         if analysis:
-            generate_trade_plan(request.user, entry.ticker, analysis)
+            generate_trade_plan(request.user, ticker, analysis)
+            job['success'] = int(job.get('success', 0)) + 1
+            job['last_status'] = f'{ticker.symbol}: {analysis.signal} ({analysis.confidence_score}%)'
+        else:
+            job['errors'] = int(job.get('errors', 0)) + 1
+            job['last_status'] = f'{ticker.symbol}: not enough data'
+    except Exception as exc:
+        symbol = ticker.symbol if 'ticker' in locals() else 'unknown'
+        job['errors'] = int(job.get('errors', 0)) + 1
+        job['last_status'] = f'{symbol}: error - {exc}'
 
-    # Send analysis report email if user has email and toggle is on
-    profile, _ = TradingProfile.objects.get_or_create(user=request.user)
-    if request.user.email and profile.send_analysis_email:
+    job['index'] = index + 1
+    request.session[ANALYZE_ALL_SESSION_KEY] = job
+    request.session.modified = True
+
+    if job['index'] >= total:
+        return _finish_analyze_all_job(request, job)
+
+    return _render_analyze_progress(request, job)
+
+
+def _start_analyze_all_job(request, force: bool):
+    entries = (
+        Watchlist.objects
+        .filter(user=request.user)
+        .select_related('ticker')
+        .order_by('ticker__symbol')
+    )
+    ticker_ids = []
+    seen = set()
+    for entry in entries:
+        if entry.ticker_id in seen:
+            continue
+        seen.add(entry.ticker_id)
+        ticker_ids.append(entry.ticker_id)
+
+    if not ticker_ids:
+        messages.warning(request, 'Your watchlist is empty.')
+        return redirect('dashboard')
+
+    job = {
+        'ticker_ids': ticker_ids,
+        'index': 0,
+        'success': 0,
+        'errors': 0,
+        'force': force,
+        'last_status': 'Starting batch analysis...',
+    }
+    request.session[ANALYZE_ALL_SESSION_KEY] = job
+    request.session.modified = True
+    return _render_analyze_progress(request, job, delay_ms=500)
+
+
+def _finish_analyze_all_job(request, job):
+    email_message = _send_analysis_report_if_enabled(request.user)
+    label = 'Force re-analysis complete' if job.get('force') else 'Analysis complete'
+    if email_message:
+        messages.info(request, email_message)
+    messages.success(
+        request,
+        f"{label}: {job.get('success', 0)} updated, {job.get('errors', 0)} errors."
+    )
+
+    request.session.pop(ANALYZE_ALL_SESSION_KEY, None)
+    request.session.modified = True
+    return _render_analyze_progress(request, job, done=True, delay_ms=1600)
+
+
+def _send_analysis_report_if_enabled(user):
+    profile, _ = TradingProfile.objects.get_or_create(user=user)
+    if user.email and profile.send_analysis_email:
         analysis_rows = []
-        for entry in Watchlist.objects.filter(user=request.user).select_related('ticker'):
+        for entry in Watchlist.objects.filter(user=user).select_related('ticker'):
             analysis = entry.ticker.latest_analysis()
             analysis_rows.append({'ticker': entry.ticker, 'analysis': analysis})
 
         # Latest trade plan per ticker (Python-level dedup, avoids SQLite timestamp issues)
         seen_tickers = set()
         latest_trades = []
-        for trade in Trade.objects.filter(user=request.user).select_related('ticker', 'analysis').order_by('-created_at'):
+        for trade in Trade.objects.filter(user=user).select_related('ticker', 'analysis').order_by('-created_at'):
             if trade.ticker_id not in seen_tickers:
                 seen_tickers.add(trade.ticker_id)
                 latest_trades.append(trade)
         latest_trades.sort(key=lambda t: (-t.rr_ratio, -t.confidence_score))
 
         try:
-            send_analysis_report_email(request.user, analysis_rows, latest_trades)
-            messages.info(request, f'Analysis report sent to {request.user.email}.')
+            send_analysis_report_email(user, analysis_rows, latest_trades)
+            return f'Analysis report sent to {user.email}.'
         except Exception as e:
-            messages.warning(request, f'Could not send email: {e}')
+            return f'Could not send email: {e}'
+    return ''
 
-    return redirect('dashboard')
+
+def _render_analyze_progress(request, job, done=False, delay_ms=900):
+    total = len(job.get('ticker_ids', []))
+    completed = min(int(job.get('index', 0)), total)
+    progress = int(round((completed / total) * 100)) if total else 0
+    next_url = reverse('dashboard') if done else f"{reverse('analyze_all')}?step=1"
+
+    return render(request, 'stocks/analyze_progress.html', {
+        'job': job,
+        'done': done,
+        'total': total,
+        'completed': completed,
+        'remaining': max(total - completed, 0),
+        'progress': progress,
+        'next_url': next_url,
+        'cancel_url': f"{reverse('analyze_all')}?cancel=1",
+        'delay_ms': delay_ms,
+        'delay_seconds': max(1, round(delay_ms / 1000)),
+    })
 
 
 @login_required
