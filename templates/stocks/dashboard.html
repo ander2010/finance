@@ -263,6 +263,9 @@
                   {% if row.analysis.signal == 'BUY' %}bg-green-400{% elif row.analysis.signal == 'WATCH' %}bg-amber-400{% else %}bg-red-400{% endif %}"></span>
                 {{ row.analysis.signal }}
               </span>
+              <p class="text-xs mt-1" style="color:#475569;" title="Last analysis run">
+                {{ row.analysis.updated_at|date:"M d, Y" }} {{ row.analysis.updated_at|time:"H:i" }}
+              </p>
             {% else %}
               <span class="text-xs" style="color:#475569;">No data</span>
             {% endif %}
