@@ -11,8 +11,9 @@ urlpatterns = [
     path('performance/',                   views.performance,    name='performance'),
     path('detail/<int:entry_id>/',         views.stock_detail,   name='stock_detail'),
     # AJAX
-    path('company-info/<str:symbol>/',     views.company_info,   name='company_info'),
-    path('smart-money/<str:symbol>/',      views.smart_money,    name='smart_money'),
+    path('company-info/<str:symbol>/',     views.company_info,      name='company_info'),
+    path('smart-money/<str:symbol>/',      views.smart_money,       name='smart_money'),
+    path('accumulation-scan/',             views.accumulation_scan, name='accumulation_scan'),
     # Lists
     path('lists/create/',                  views.create_list,    name='create_list'),
     path('lists/delete/<int:list_id>/',    views.delete_list,    name='delete_list'),

@@ -540,11 +540,23 @@ def run_analysis_for_ticker(ticker: Ticker, force: bool = False) -> Optional[Tic
 
     score  = compute_score(strategies, df, sma9_data,
                            structure=structure, spy_above_sma200=spy['above_sma200'])
-    signal = 'BUY' if score >= 70 else 'WATCH' if score >= 40 else 'NO_BUY'
 
     today_row     = df.iloc[-1]
     current_price = round(float(today_row['close']), 2)
     entry, stop_loss, take_profit, rr = compute_trading_levels(df, strategies, sma9_data)
+
+    # ── R:R adjustments ────────────────────────────────────────────────────────
+    if rr < 0.8:
+        score = 0                       # descartar — forzar NO_BUY
+    elif rr < 1.0:
+        score = min(score, 30)          # máximo 30
+    elif rr < 1.5:
+        score = max(0, score - 30)      # penalizar fuerte
+    elif rr > 2.0:
+        score = min(100, score + 20)    # premiar
+    # ──────────────────────────────────────────────────────────────────────────
+
+    signal = 'BUY' if score >= 70 else 'WATCH' if score >= 40 else 'NO_BUY'
     explanation = build_explanation(strategies, score, df, sma9_data)
 
     market_structure_data = {

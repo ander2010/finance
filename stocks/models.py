@@ -129,6 +129,30 @@ class Watchlist(models.Model):
         return self.stock_list.name if self.stock_list else 'General'
 
 
+class AccumulationSignal(models.Model):
+    """
+    Accumulation zone detection — shared per ticker per day, completely
+    separate from TickerAnalysis / existing strategy pipeline.
+    """
+    ticker              = models.ForeignKey(Ticker, on_delete=models.CASCADE, related_name='accumulation_signals')
+    date                = models.DateField(db_index=True)
+    price               = models.FloatField()
+    rsi                 = models.FloatField()
+    dist_from_sma200_pct = models.FloatField()   # positive = above SMA200, negative = below
+    vol_ratio           = models.FloatField()     # today vol / 20-day avg vol
+    score               = models.IntegerField(default=0)
+    notes               = models.TextField(blank=True)
+    created_at          = models.DateTimeField(auto_now_add=True)
+    updated_at          = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('ticker', 'date')
+        ordering = ['-date', '-score']
+
+    def __str__(self):
+        return f"{self.ticker.symbol} {self.date} accum score={self.score}"
+
+
 class Trade(models.Model):
     """Per-user, per-ticker trade plan generated from TickerAnalysis + TradingProfile."""
     STRATEGY_CHOICES = [

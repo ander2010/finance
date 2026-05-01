@@ -31,6 +31,14 @@
       </svg>
       Force Re-analyze
     </a>
+    <button onclick="openAccumulationModal()" class="btn-ghost text-sm cursor-pointer"
+            style="border-color:rgba(249,115,22,0.35);color:#F97316;">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+      </svg>
+      Accumulation Scan
+    </button>
   </div>
 </div>
 
@@ -697,6 +705,113 @@
 </div>
 
 
+<!-- ═══════════════════ ACCUMULATION SCAN MODAL ══════════════════════════════ -->
+<div id="accumulationModal" role="dialog" aria-modal="true" aria-labelledby="accTitle"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     style="display:none!important;background:rgba(2,6,23,0.88);backdrop-filter:blur(6px);">
+  <div class="card w-full relative" style="max-width:860px;max-height:90vh;display:flex;flex-direction:column;">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 flex-shrink-0"
+         style="border-bottom:1px solid #334155;">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg flex items-center justify-center"
+             style="background:rgba(249,115,22,0.15);border:1px solid rgba(249,115,22,0.3);">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+          </svg>
+        </div>
+        <div>
+          <h2 id="accTitle" class="text-base font-bold text-white">Accumulation Zone Scan</h2>
+          <p class="text-xs" style="color:#64748B;">Stocks near SMA200 with oversold RSI — before the move</p>
+        </div>
+      </div>
+      <button onclick="closeAccumulationModal()"
+              class="w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer"
+              style="background:#0F172A;border:1px solid #334155;color:#64748B;" aria-label="Close">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Action bar -->
+    <div class="px-6 py-3 flex items-center gap-3 flex-shrink-0"
+         style="border-bottom:1px solid #1E293B;background:#0F172A;">
+      <button id="accRunBtn" onclick="runAccumulationScan(false)"
+              class="btn-primary text-sm cursor-pointer"
+              style="background:rgba(249,115,22,0.15);border:1px solid rgba(249,115,22,0.4);color:#F97316;">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        Run Scan
+      </button>
+      <button onclick="runAccumulationScan(true)"
+              class="btn-ghost text-sm cursor-pointer" style="color:#64748B;">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+        </svg>
+        Force Re-scan
+      </button>
+      <p id="accScanInfo" class="text-xs ml-auto" style="color:#475569;"></p>
+    </div>
+
+    <!-- Loading -->
+    <div id="accLoading" class="flex-1 flex flex-col items-center justify-center gap-4 py-12" style="display:none!important;">
+      <div class="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin"
+           style="border-color:rgba(249,115,22,0.5);border-top-color:transparent;"></div>
+      <p class="text-sm" style="color:#64748B;">Scanning watchlist...</p>
+    </div>
+
+    <!-- Empty / idle state -->
+    <div id="accIdle" class="flex-1 flex flex-col items-center justify-center gap-3 py-12">
+      <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="1.5" aria-hidden="true">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <p class="text-sm font-medium" style="color:#475569;">Press Run Scan to analyze your watchlist</p>
+      <p class="text-xs" style="color:#334155;">Uses cached price data — fast, no new downloads</p>
+    </div>
+
+    <!-- Empty results -->
+    <div id="accEmpty" class="flex-1 flex flex-col items-center justify-center gap-3 py-12" style="display:none;">
+      <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="1.5" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>
+      </svg>
+      <p class="text-sm font-medium" style="color:#475569;">No accumulation signals found</p>
+      <p class="text-xs" style="color:#334155;">No tickers are near SMA200 with oversold RSI right now</p>
+    </div>
+
+    <!-- Results table -->
+    <div id="accResults" class="flex-1 overflow-y-auto" style="display:none;">
+      <table class="w-full text-xs" role="table">
+        <thead style="position:sticky;top:0;z-index:1;background:#0F172A;">
+          <tr style="border-bottom:1px solid #334155;">
+            <th class="text-left px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">TICKER</th>
+            <th class="text-left px-4 py-3 font-semibold tracking-wider hidden sm:table-cell" style="color:#64748B;">LIST</th>
+            <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">PRICE</th>
+            <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">RSI</th>
+            <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">vs SMA200</th>
+            <th class="text-right px-4 py-3 font-semibold tracking-wider hidden sm:table-cell" style="color:#64748B;">VOL RATIO</th>
+            <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">SCORE</th>
+            <th class="text-left px-4 py-3 font-semibold tracking-wider hidden md:table-cell" style="color:#64748B;">SIGNALS</th>
+          </tr>
+        </thead>
+        <tbody id="accTableBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-3 flex items-center justify-between flex-shrink-0"
+         style="border-top:1px solid #1E293B;">
+      <p class="text-xs" style="color:#334155;">Pre-signal · No confirmation · Expect false positives · Not financial advice</p>
+      <button onclick="closeAccumulationModal()" class="btn-ghost text-xs px-3 py-2 cursor-pointer">Close</button>
+    </div>
+
+  </div>
+</div>
+
+
 <!-- ═══════════════════ ASSIGN LIST MODAL ════════════════════════════════════ -->
 <div id="assignModal" role="dialog" aria-modal="true" aria-labelledby="asgTitle"
      class="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -1122,5 +1237,83 @@ function saveAssign() {
 }
 
 function closeAssignModal() { hideModal('assignModal'); asgEntryId = null; }
+
+// ── Accumulation Scan Modal ─────────────────────────────────────────────────
+function openAccumulationModal()  { showModal('accumulationModal'); }
+function closeAccumulationModal() { hideModal('accumulationModal'); }
+
+function _accShow(id) {
+  ['accLoading','accIdle','accEmpty','accResults'].forEach(el => {
+    const node = document.getElementById(el);
+    if (node) node.style.display = el === id ? '' : 'none';
+  });
+}
+
+function runAccumulationScan(force) {
+  const btn  = document.getElementById('accRunBtn');
+  const info = document.getElementById('accScanInfo');
+  btn.disabled = true;
+  info.textContent = '';
+  _accShow('accLoading');
+
+  fetch("{% url 'accumulation_scan' %}", {
+    method: 'POST',
+    headers: {
+      'X-CSRFToken': getCsrf(),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: force ? 'force=1' : '',
+  })
+  .then(r => r.json())
+  .then(data => {
+    const results = data.results || [];
+    info.textContent = `${results.length} signal${results.length !== 1 ? 's' : ''} found${data.errors ? ' · ' + data.errors + ' error(s)' : ''}`;
+
+    if (results.length === 0) {
+      _accShow('accEmpty');
+      return;
+    }
+
+    const tbody = document.getElementById('accTableBody');
+    tbody.innerHTML = '';
+    results.forEach(r => {
+      const distColor = r.dist_pct < 0 ? '#EF4444' : '#22C55E';
+      const distArrow = r.dist_pct < 0 ? '↓' : '↑';
+      const distAbs   = Math.abs(r.dist_pct).toFixed(1);
+      const rsiColor  = r.rsi <= 30 ? '#EF4444' : r.rsi <= 35 ? '#F97316' : '#F59E0B';
+
+      // Score bar color
+      const scoreColor = r.score >= 70 ? '#22C55E' : r.score >= 50 ? '#F97316' : '#F59E0B';
+
+      tbody.insertAdjacentHTML('beforeend', `
+        <tr style="border-bottom:1px solid rgba(51,65,85,0.5);">
+          <td class="px-4 py-3">
+            <span class="font-bold" style="color:#F97316;">${r.symbol}</span>
+          </td>
+          <td class="px-4 py-3 hidden sm:table-cell text-xs" style="color:#475569;">${r.list_name}</td>
+          <td class="px-4 py-3 text-right font-mono font-semibold text-white">$${r.price.toFixed(2)}</td>
+          <td class="px-4 py-3 text-right font-mono font-semibold" style="color:${rsiColor};">${r.rsi.toFixed(1)}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:${distColor};">${distArrow}${distAbs}%</td>
+          <td class="px-4 py-3 text-right font-mono hidden sm:table-cell" style="color:#94A3B8;">${r.vol_ratio.toFixed(2)}x</td>
+          <td class="px-4 py-3 text-right">
+            <div class="flex items-center justify-end gap-2">
+              <div class="w-16 h-1.5 rounded-full" style="background:#1E293B;">
+                <div class="h-full rounded-full" style="width:${r.score}%;background:${scoreColor};"></div>
+              </div>
+              <span class="font-mono font-bold" style="color:${scoreColor};min-width:2rem;">${r.score}</span>
+            </div>
+          </td>
+          <td class="px-4 py-3 hidden md:table-cell text-xs" style="color:#64748B;">${r.notes}</td>
+        </tr>
+      `);
+    });
+    _accShow('accResults');
+  })
+  .catch(() => {
+    info.textContent = 'Error running scan';
+    _accShow('accIdle');
+  })
+  .finally(() => { btn.disabled = false; });
+}
 </script>
 {% endblock %}

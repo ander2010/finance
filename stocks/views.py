@@ -576,6 +576,44 @@ def company_info(request, symbol):
 
 
 @login_required
+@require_POST
+def accumulation_scan(request):
+    """AJAX: run accumulation zone scan on user's watchlist. Returns JSON."""
+    from .accumulation import analyze_accumulation_for_ticker
+
+    force   = request.POST.get('force') == '1'
+    entries = (
+        Watchlist.objects
+        .filter(user=request.user)
+        .select_related('ticker', 'stock_list')
+        .order_by('ticker__symbol')
+    )
+
+    results = []
+    errors  = 0
+
+    for entry in entries:
+        try:
+            signal = analyze_accumulation_for_ticker(entry.ticker, force=force)
+            if signal:
+                results.append({
+                    'symbol':    entry.ticker.symbol,
+                    'list_name': entry.list_name,
+                    'price':     signal.price,
+                    'rsi':       signal.rsi,
+                    'dist_pct':  signal.dist_from_sma200_pct,
+                    'vol_ratio': signal.vol_ratio,
+                    'score':     signal.score,
+                    'notes':     signal.notes,
+                })
+        except Exception:
+            errors += 1
+
+    results.sort(key=lambda r: -r['score'])
+    return JsonResponse({'results': results, 'errors': errors})
+
+
+@login_required
 @require_GET
 def smart_money(request, symbol):
     symbol = symbol.upper()
