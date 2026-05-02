@@ -253,16 +253,21 @@ def _build_trade_table(trade_list):
 
 
 def _build_accumulation_table(acc_rows: list) -> str:
-    th = "padding:9px 12px;color:#64748B;font-weight:600;font-size:0.78em;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;"
+    th  = "padding:9px 12px;color:#64748B;font-weight:600;font-size:0.78em;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;"
+    fmt = lambda v: f'${v:.2f}' if v is not None else '—'
+
     header = f"""
     <thead style="background:#0F172A;">
       <tr>
         <th style="{th}text-align:left;">Ticker</th>
         <th style="{th}text-align:left;">List</th>
+        <th style="{th}text-align:left;">Fase</th>
         <th style="{th}text-align:right;">Price</th>
         <th style="{th}text-align:right;">RSI</th>
-        <th style="{th}text-align:right;">vs SMA200</th>
-        <th style="{th}text-align:right;">Vol Ratio</th>
+        <th style="{th}text-align:right;">Resist</th>
+        <th style="{th}text-align:right;">Entry</th>
+        <th style="{th}text-align:right;">Stop</th>
+        <th style="{th}text-align:right;">Target</th>
         <th style="{th}text-align:right;">Score</th>
         <th style="{th}text-align:left;">Signals</th>
       </tr>
@@ -270,28 +275,39 @@ def _build_accumulation_table(acc_rows: list) -> str:
 
     rows = ''
     for r in acc_rows:
-        dist_pct   = r['dist_pct']
-        dist_color = '#EF4444' if dist_pct < 0 else '#22C55E'
-        dist_arrow = '↓' if dist_pct < 0 else '↑'
-        rsi        = r['rsi']
-        rsi_color  = '#EF4444' if rsi <= 30 else '#F97316' if rsi <= 35 else '#F59E0B'
-        score      = r['score']
-        score_color = '#22C55E' if score >= 70 else '#F97316' if score >= 50 else '#F59E0B'
+        is_ready    = r.get('signal_type') == 'READY_TO_BUY'
+        ticker_color = '#22C55E' if is_ready else '#F97316'
+        rsi          = r['rsi']
+        rsi_color    = '#EF4444' if rsi <= 30 else '#F97316' if rsi <= 35 else '#F59E0B' if rsi <= 40 else '#22C55E'
+        score        = r['score']
+        score_color  = '#22C55E' if score >= 70 else '#F97316' if score >= 50 else '#F59E0B'
+        row_bg       = 'background:rgba(34,197,94,0.04);' if is_ready else ''
+
+        fase_html = (
+            '<span style="padding:2px 7px;border-radius:9999px;font-size:0.72em;font-weight:800;'
+            'background:rgba(34,197,94,0.15);color:#22C55E;">✓ LISTO</span>'
+            if is_ready else
+            '<span style="padding:2px 7px;border-radius:9999px;font-size:0.72em;font-weight:700;'
+            'background:rgba(249,115,22,0.12);color:#F97316;">ESPERAR</span>'
+        )
 
         rows += f"""
-      <tr style="border-bottom:1px solid #1E293B;">
-        <td style="padding:9px 12px;font-weight:700;color:#F97316;">{r['symbol']}</td>
+      <tr style="border-bottom:1px solid #1E293B;{row_bg}">
+        <td style="padding:9px 12px;font-weight:700;color:{ticker_color};">{r['symbol']}</td>
         <td style="padding:9px 12px;font-size:0.8em;color:#475569;">{r['list_name']}</td>
-        <td style="padding:9px 12px;text-align:right;font-family:monospace;font-weight:600;color:#F8FAFC;">${r['price']:.2f}</td>
+        <td style="padding:9px 12px;">{fase_html}</td>
+        <td style="padding:9px 12px;text-align:right;font-family:monospace;font-weight:600;color:#F8FAFC;">{fmt(r['price'])}</td>
         <td style="padding:9px 12px;text-align:right;font-family:monospace;font-weight:600;color:{rsi_color};">{rsi:.1f}</td>
-        <td style="padding:9px 12px;text-align:right;font-family:monospace;color:{dist_color};">{dist_arrow}{abs(dist_pct):.1f}%</td>
-        <td style="padding:9px 12px;text-align:right;font-family:monospace;color:#94A3B8;">{r['vol_ratio']:.2f}x</td>
+        <td style="padding:9px 12px;text-align:right;font-family:monospace;color:#94A3B8;">{fmt(r.get('resistance'))}</td>
+        <td style="padding:9px 12px;text-align:right;font-family:monospace;font-weight:700;color:{'#22C55E' if is_ready else '#475569'};">{fmt(r.get('entry'))}</td>
+        <td style="padding:9px 12px;text-align:right;font-family:monospace;color:#EF4444;">{fmt(r.get('stop'))}</td>
+        <td style="padding:9px 12px;text-align:right;font-family:monospace;color:#22C55E;">{fmt(r.get('target'))}</td>
         <td style="padding:9px 12px;text-align:right;font-weight:700;color:{score_color};">{score}</td>
-        <td style="padding:9px 12px;font-size:0.8em;color:#64748B;">{r['notes']}</td>
+        <td style="padding:9px 12px;font-size:0.78em;color:#64748B;">{r['notes']}</td>
       </tr>"""
 
     if not rows:
-        rows = '<tr><td colspan="8" style="padding:16px;color:#94A3B8;text-align:center;">No accumulation signals</td></tr>'
+        rows = '<tr><td colspan="11" style="padding:16px;color:#94A3B8;text-align:center;">No accumulation signals</td></tr>'
 
     return f'<table style="width:100%;border-collapse:collapse;font-size:0.85em;">{header}<tbody>{rows}</tbody></table>'
 

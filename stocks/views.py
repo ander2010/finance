@@ -597,14 +597,19 @@ def accumulation_scan(request):
             signal = analyze_accumulation_for_ticker(entry.ticker, force=force)
             if signal:
                 results.append({
-                    'symbol':    entry.ticker.symbol,
-                    'list_name': entry.list_name,
-                    'price':     signal.price,
-                    'rsi':       signal.rsi,
-                    'dist_pct':  signal.dist_from_sma200_pct,
-                    'vol_ratio': signal.vol_ratio,
-                    'score':     signal.score,
-                    'notes':     signal.notes,
+                    'symbol':      entry.ticker.symbol,
+                    'list_name':   entry.list_name,
+                    'signal_type': signal.signal_type,
+                    'price':       signal.price,
+                    'rsi':         signal.rsi,
+                    'dist_pct':    signal.dist_from_sma200_pct,
+                    'vol_ratio':   signal.vol_ratio,
+                    'resistance':  signal.resistance_level,
+                    'entry':       signal.entry_price,
+                    'stop':        signal.stop_loss,
+                    'target':      signal.target_price,
+                    'score':       signal.score,
+                    'notes':       signal.notes,
                 })
         except Exception:
             errors += 1

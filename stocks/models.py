@@ -133,24 +133,35 @@ class AccumulationSignal(models.Model):
     """
     Accumulation zone detection — shared per ticker per day, completely
     separate from TickerAnalysis / existing strategy pipeline.
+
+    signal_type:
+      ACCUM        — in the zone, waiting (RSI low, near SMA200, no breakout yet)
+      READY_TO_BUY — confirmed setup: RSI>40, breakout, volume spike, above SMA9/SMA20
     """
-    ticker              = models.ForeignKey(Ticker, on_delete=models.CASCADE, related_name='accumulation_signals')
-    date                = models.DateField(db_index=True)
-    price               = models.FloatField()
-    rsi                 = models.FloatField()
+    TYPE_CHOICES = [('ACCUM', 'Accumulation'), ('READY_TO_BUY', 'Ready to Buy')]
+
+    ticker               = models.ForeignKey(Ticker, on_delete=models.CASCADE, related_name='accumulation_signals')
+    date                 = models.DateField(db_index=True)
+    signal_type          = models.CharField(max_length=15, choices=TYPE_CHOICES, default='ACCUM')
+    price                = models.FloatField()
+    rsi                  = models.FloatField()
     dist_from_sma200_pct = models.FloatField()   # positive = above SMA200, negative = below
-    vol_ratio           = models.FloatField()     # today vol / 20-day avg vol
-    score               = models.IntegerField(default=0)
-    notes               = models.TextField(blank=True)
-    created_at          = models.DateTimeField(auto_now_add=True)
-    updated_at          = models.DateTimeField(auto_now=True)
+    vol_ratio            = models.FloatField()    # today vol / 20-day avg vol
+    resistance_level     = models.FloatField(null=True, blank=True)
+    entry_price          = models.FloatField(null=True, blank=True)  # populated on READY_TO_BUY
+    stop_loss            = models.FloatField(null=True, blank=True)
+    target_price         = models.FloatField(null=True, blank=True)
+    score                = models.IntegerField(default=0)
+    notes                = models.TextField(blank=True)
+    created_at           = models.DateTimeField(auto_now_add=True)
+    updated_at           = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ('ticker', 'date')
         ordering = ['-date', '-score']
 
     def __str__(self):
-        return f"{self.ticker.symbol} {self.date} accum score={self.score}"
+        return f"{self.ticker.symbol} {self.date} {self.signal_type} score={self.score}"
 
 
 class Trade(models.Model):

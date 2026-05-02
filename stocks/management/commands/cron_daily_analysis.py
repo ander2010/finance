@@ -230,14 +230,19 @@ class Command(BaseCommand):
                     ).first()
                     if sig:
                         acc_rows.append({
-                            'symbol':    entry.ticker.symbol,
-                            'list_name': entry.list_name,
-                            'price':     sig.price,
-                            'rsi':       sig.rsi,
-                            'dist_pct':  sig.dist_from_sma200_pct,
-                            'vol_ratio': sig.vol_ratio,
-                            'score':     sig.score,
-                            'notes':     sig.notes,
+                            'symbol':      entry.ticker.symbol,
+                            'list_name':   entry.list_name,
+                            'signal_type': sig.signal_type,
+                            'price':       sig.price,
+                            'rsi':         sig.rsi,
+                            'dist_pct':    sig.dist_from_sma200_pct,
+                            'vol_ratio':   sig.vol_ratio,
+                            'resistance':  sig.resistance_level,
+                            'entry':       sig.entry_price,
+                            'stop':        sig.stop_loss,
+                            'target':      sig.target_price,
+                            'score':       sig.score,
+                            'notes':       sig.notes,
                         })
                 acc_rows.sort(key=lambda r: -r['score'])
 

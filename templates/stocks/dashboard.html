@@ -789,10 +789,13 @@
           <tr style="border-bottom:1px solid #334155;">
             <th class="text-left px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">TICKER</th>
             <th class="text-left px-4 py-3 font-semibold tracking-wider hidden sm:table-cell" style="color:#64748B;">LIST</th>
+            <th class="text-left px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">FASE</th>
             <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">PRICE</th>
             <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">RSI</th>
-            <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">vs SMA200</th>
-            <th class="text-right px-4 py-3 font-semibold tracking-wider hidden sm:table-cell" style="color:#64748B;">VOL RATIO</th>
+            <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">RESIST</th>
+            <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">ENTRY</th>
+            <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">STOP</th>
+            <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">TARGET</th>
             <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">SCORE</th>
             <th class="text-left px-4 py-3 font-semibold tracking-wider hidden md:table-cell" style="color:#64748B;">SIGNALS</th>
           </tr>
@@ -1277,27 +1280,40 @@ function runAccumulationScan(force) {
     const tbody = document.getElementById('accTableBody');
     tbody.innerHTML = '';
     results.forEach(r => {
-      const distColor = r.dist_pct < 0 ? '#EF4444' : '#22C55E';
-      const distArrow = r.dist_pct < 0 ? '↓' : '↑';
-      const distAbs   = Math.abs(r.dist_pct).toFixed(1);
-      const rsiColor  = r.rsi <= 30 ? '#EF4444' : r.rsi <= 35 ? '#F97316' : '#F59E0B';
-
-      // Score bar color
+      const isReady    = r.signal_type === 'READY_TO_BUY';
+      const rowBg      = isReady ? 'rgba(34,197,94,0.05)' : '';
+      const rsiColor   = r.rsi <= 30 ? '#EF4444' : r.rsi <= 35 ? '#F97316' : r.rsi <= 40 ? '#F59E0B' : '#22C55E';
       const scoreColor = r.score >= 70 ? '#22C55E' : r.score >= 50 ? '#F97316' : '#F59E0B';
 
+      const faseBadge = isReady
+        ? `<span style="padding:2px 7px;border-radius:9999px;font-size:0.72em;font-weight:800;
+                        background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.35);">
+             ✓ LISTO
+           </span>`
+        : `<span style="padding:2px 7px;border-radius:9999px;font-size:0.72em;font-weight:700;
+                        background:rgba(249,115,22,0.12);color:#F97316;border:1px solid rgba(249,115,22,0.25);">
+             ESPERAR
+           </span>`;
+
+      const fmt  = v => v != null ? '$' + v.toFixed(2) : '—';
+      const fmtN = v => v != null ? '$' + v.toFixed(2) : '—';
+
       tbody.insertAdjacentHTML('beforeend', `
-        <tr style="border-bottom:1px solid rgba(51,65,85,0.5);">
+        <tr style="border-bottom:1px solid rgba(51,65,85,0.5);background:${rowBg};">
           <td class="px-4 py-3">
-            <span class="font-bold" style="color:#F97316;">${r.symbol}</span>
+            <span class="font-bold" style="color:${isReady ? '#22C55E' : '#F97316'};">${r.symbol}</span>
           </td>
           <td class="px-4 py-3 hidden sm:table-cell text-xs" style="color:#475569;">${r.list_name}</td>
-          <td class="px-4 py-3 text-right font-mono font-semibold text-white">$${r.price.toFixed(2)}</td>
+          <td class="px-4 py-3">${faseBadge}</td>
+          <td class="px-4 py-3 text-right font-mono font-semibold text-white">${fmt(r.price)}</td>
           <td class="px-4 py-3 text-right font-mono font-semibold" style="color:${rsiColor};">${r.rsi.toFixed(1)}</td>
-          <td class="px-4 py-3 text-right font-mono" style="color:${distColor};">${distArrow}${distAbs}%</td>
-          <td class="px-4 py-3 text-right font-mono hidden sm:table-cell" style="color:#94A3B8;">${r.vol_ratio.toFixed(2)}x</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#94A3B8;">${fmtN(r.resistance)}</td>
+          <td class="px-4 py-3 text-right font-mono font-semibold" style="color:${isReady ? '#22C55E' : '#475569'};">${fmtN(r.entry)}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#EF4444;">${fmtN(r.stop)}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#22C55E;">${fmtN(r.target)}</td>
           <td class="px-4 py-3 text-right">
             <div class="flex items-center justify-end gap-2">
-              <div class="w-16 h-1.5 rounded-full" style="background:#1E293B;">
+              <div class="w-14 h-1.5 rounded-full" style="background:#1E293B;">
                 <div class="h-full rounded-full" style="width:${r.score}%;background:${scoreColor};"></div>
               </div>
               <span class="font-mono font-bold" style="color:${scoreColor};min-width:2rem;">${r.score}</span>
