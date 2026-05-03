@@ -1,0 +1,525 @@
+{% extends 'base.html' %}
+{% block title %}Paper Trading — StockAnalyzer{% endblock %}
+
+{% block content %}
+
+{% if setup_needed %}
+<!-- ══ SETUP ══════════════════════════════════════════════════════════════════ -->
+<div class="max-w-md mx-auto mt-16">
+  <div class="card p-8 text-center">
+    <div class="w-14 h-14 rounded-xl flex items-center justify-center mx-auto mb-4"
+         style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);">
+      <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2">
+        <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+      </svg>
+    </div>
+    <h1 class="text-xl font-bold text-white mb-2">Crear Paper Portfolio</h1>
+    <p class="text-sm mb-6" style="color:#64748B;">
+      Define tu capital virtual de inicio. No es dinero real — es para validar la estrategia antes de arriesgar.
+    </p>
+    <form method="post" action="{% url 'paper_setup' %}">
+      {% csrf_token %}
+      <div class="mb-4 text-left">
+        <label class="block text-xs font-semibold mb-1" style="color:#94A3B8;">CAPITAL INICIAL</label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold" style="color:#22C55E;">$</span>
+          <input type="number" name="amount" min="1" step="0.01" placeholder="1000.00"
+                 class="form-input pl-8" required>
+        </div>
+      </div>
+      <button type="submit" class="btn-primary w-full justify-center">
+        Crear Portfolio
+      </button>
+    </form>
+  </div>
+</div>
+
+{% else %}
+<!-- ══ PORTFOLIO ACTIVE ════════════════════════════════════════════════════════ -->
+
+<!-- Header -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-white">Paper Portfolio</h1>
+    <p class="text-sm mt-1" style="color:#64748B;">Estrategia validada con dinero virtual · {{ user.username }}</p>
+  </div>
+  <button onclick="openAddFundsModal()" class="btn-ghost text-sm cursor-pointer"
+          style="border-color:rgba(34,197,94,0.35);color:#22C55E;">
+    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    Añadir Fondos
+  </button>
+</div>
+
+<!-- Stats bar -->
+<div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+  <div class="card p-4">
+    <p class="text-xs font-semibold mb-1" style="color:#64748B;">CAPITAL TOTAL</p>
+    <p class="text-xl font-bold text-white">${{ total_deposited|floatformat:2 }}</p>
+    <p class="text-xs mt-0.5" style="color:#475569;">depositado</p>
+  </div>
+  <div class="card p-4">
+    <p class="text-xs font-semibold mb-1" style="color:#64748B;">CASH DISPONIBLE</p>
+    <p class="text-xl font-bold" style="color:#22C55E;">${{ portfolio.cash_balance|floatformat:2 }}</p>
+    <p class="text-xs mt-0.5" style="color:#475569;">sin invertir</p>
+  </div>
+  <div class="card p-4">
+    <p class="text-xs font-semibold mb-1" style="color:#64748B;">EN TRADES</p>
+    <p class="text-xl font-bold text-white">${{ open_value|floatformat:2 }}</p>
+    <p class="text-xs mt-0.5" style="color:#475569;">{{ open_trades|length }} posición{{ open_trades|length|pluralize:"es" }}</p>
+  </div>
+  <div class="card p-4">
+    <p class="text-xs font-semibold mb-1" style="color:#64748B;">P&L TOTAL</p>
+    <p class="text-xl font-bold {% if portfolio_pnl >= 0 %}glow-buy{% else %}glow-danger{% endif %}"
+       style="color:{% if portfolio_pnl >= 0 %}#22C55E{% else %}#EF4444{% endif %};">
+      {% if portfolio_pnl >= 0 %}+{% endif %}${{ portfolio_pnl|floatformat:2 }}
+    </p>
+    <p class="text-xs mt-0.5" style="color:#475569;">vs capital invertido</p>
+  </div>
+  <div class="card p-4">
+    <p class="text-xs font-semibold mb-1" style="color:#64748B;">WIN RATE</p>
+    <p class="text-xl font-bold" style="color:{% if win_rate >= 50 %}#22C55E{% else %}#EF4444{% endif %};">
+      {{ win_rate }}%
+    </p>
+    <p class="text-xs mt-0.5" style="color:#475569;">{{ wins }}W / {{ losses }}L</p>
+  </div>
+</div>
+
+<!-- ── Signals disponibles hoy ───────────────────────────────────────────────── -->
+{% if buy_signals or ready_signals %}
+<div class="card mb-6">
+  <div class="px-5 py-4 flex items-center gap-2" style="border-bottom:1px solid #334155;">
+    <div class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+    <h2 class="text-sm font-bold text-white">Señales de hoy disponibles</h2>
+    <span class="text-xs ml-auto" style="color:#475569;">{{ today }}</span>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead style="background:#0F172A;">
+        <tr style="border-bottom:1px solid #334155;">
+          <th class="text-left px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">TICKER</th>
+          <th class="text-left px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">TIPO</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">PRECIO</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">ENTRY</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">STOP</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">TARGET</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">R:R</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#22C55E;">SHARES</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#22C55E;">CAPITAL</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in buy_signals %}
+        <tr class="signal-row" data-entry="{{ a.entry_price|floatformat:2 }}" data-stop="{{ a.stop_loss|floatformat:2 }}"
+            style="border-bottom:1px solid rgba(51,65,85,0.5);">
+          <td class="px-4 py-3 font-bold" style="color:#22C55E;">{{ a.ticker.symbol }}</td>
+          <td class="px-4 py-3">
+            <span style="padding:2px 8px;border-radius:9999px;font-size:0.72em;font-weight:700;
+                         background:rgba(34,197,94,0.15);color:#22C55E;border:1px solid rgba(34,197,94,0.3);">
+              BUY
+            </span>
+          </td>
+          <td class="px-4 py-3 text-right font-mono text-white">${{ a.current_price|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#22C55E;">${{ a.entry_price|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#EF4444;">${{ a.stop_loss|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#22C55E;">${{ a.take_profit|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#94A3B8;">{{ a.risk_reward_ratio|floatformat:1 }}x</td>
+          <td class="px-4 py-3 text-right font-mono font-bold est-shares" style="color:#F8FAFC;">—</td>
+          <td class="px-4 py-3 text-right font-mono est-capital" style="color:#F59E0B;">—</td>
+          <td class="px-4 py-3 text-right">
+            <button onclick="openExecuteModal('{{ a.ticker.symbol }}','BUY_SIGNAL',{{ a.entry_price|floatformat:2 }},{{ a.stop_loss|floatformat:2 }},{{ a.take_profit|floatformat:2 }})"
+                    class="btn-primary text-xs px-3 py-1.5 cursor-pointer">Ejecutar</button>
+          </td>
+        </tr>
+        {% endfor %}
+
+        {% for s in ready_signals %}
+        {% with s_entry=s.entry_price|default:s.price s_stop=s.stop_loss|default:0 %}
+        <tr class="signal-row" data-entry="{{ s_entry|floatformat:2 }}" data-stop="{{ s_stop|floatformat:2 }}"
+            style="border-bottom:1px solid rgba(51,65,85,0.5);background:rgba(34,197,94,0.03);">
+          <td class="px-4 py-3 font-bold" style="color:#22C55E;">{{ s.ticker.symbol }}</td>
+          <td class="px-4 py-3">
+            <span style="padding:2px 8px;border-radius:9999px;font-size:0.72em;font-weight:800;
+                         background:rgba(34,197,94,0.2);color:#22C55E;border:1px solid rgba(34,197,94,0.4);">
+              ✓ LISTO
+            </span>
+          </td>
+          <td class="px-4 py-3 text-right font-mono text-white">${{ s.price|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono font-bold" style="color:#22C55E;">
+            {% if s.entry_price %}${{ s.entry_price|floatformat:2 }}{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#EF4444;">
+            {% if s.stop_loss %}${{ s.stop_loss|floatformat:2 }}{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#22C55E;">
+            {% if s.target_price %}${{ s.target_price|floatformat:2 }}{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#94A3B8;">—</td>
+          <td class="px-4 py-3 text-right font-mono font-bold est-shares" style="color:#F8FAFC;">—</td>
+          <td class="px-4 py-3 text-right font-mono est-capital" style="color:#F59E0B;">—</td>
+          <td class="px-4 py-3 text-right">
+            <button onclick="openExecuteModal('{{ s.ticker.symbol }}','READY_TO_BUY',{{ s_entry|floatformat:2 }},{{ s_stop|floatformat:2 }},{% if s.target_price %}{{ s.target_price|floatformat:2 }}{% else %}0{% endif %})"
+                    class="btn-primary text-xs px-3 py-1.5 cursor-pointer">Ejecutar</button>
+          </td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Posiciones abiertas ─────────────────────────────────────────────────── -->
+<div class="card mb-6">
+  <div class="px-5 py-4" style="border-bottom:1px solid #334155;">
+    <h2 class="text-sm font-bold text-white">Posiciones Abiertas
+      <span class="text-xs font-normal ml-2" style="color:#475569;">{{ open_trades|length }}</span>
+    </h2>
+  </div>
+
+  {% if open_trades %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead style="background:#0F172A;">
+        <tr style="border-bottom:1px solid #334155;">
+          <th class="text-left px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">TICKER</th>
+          <th class="text-left px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">FUENTE</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">ENTRADA</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">PRECIO ACTUAL</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">STOP</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">TARGET</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">SHARES</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">P&L NO REAL.</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">FECHA</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in open_trades %}
+        {% with t=row.trade %}
+        <tr style="border-bottom:1px solid rgba(51,65,85,0.5);">
+          <td class="px-4 py-3 font-bold text-white">{{ t.ticker.symbol }}</td>
+          <td class="px-4 py-3" style="color:#64748B;">{{ t.get_source_display }}</td>
+          <td class="px-4 py-3 text-right font-mono text-white">${{ t.entry_price|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono font-semibold text-white">${{ row.current_price|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#EF4444;">${{ t.stop_loss|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#22C55E;">${{ t.target_price|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#94A3B8;">{{ t.shares }}</td>
+          <td class="px-4 py-3 text-right font-mono font-bold"
+              style="color:{% if row.unrealized >= 0 %}#22C55E{% else %}#EF4444{% endif %};">
+            {% if row.unrealized >= 0 %}+{% endif %}${{ row.unrealized|floatformat:2 }}
+            <span class="text-xs font-normal" style="color:#475569;">
+              ({% if row.unreal_pct >= 0 %}+{% endif %}{{ row.unreal_pct|floatformat:1 }}%)
+            </span>
+          </td>
+          <td class="px-4 py-3 text-right" style="color:#475569;">{{ t.entry_date }}</td>
+          <td class="px-4 py-3 text-right">
+            <button onclick="openCloseModal({{ t.id }},'{{ t.ticker.symbol }}',{{ row.current_price|floatformat:2 }})"
+                    class="btn-ghost text-xs px-2 py-1 cursor-pointer" style="color:#EF4444;border-color:rgba(239,68,68,0.3);">
+              Cerrar
+            </button>
+          </td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="px-5 py-10 text-center">
+    <p class="text-sm" style="color:#475569;">No hay posiciones abiertas. Ejecuta una señal de arriba.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Trades cerrados ────────────────────────────────────────────────────── -->
+<div class="card">
+  <div class="px-5 py-4" style="border-bottom:1px solid #334155;">
+    <h2 class="text-sm font-bold text-white">Historial de Trades</h2>
+  </div>
+
+  {% if closed_trades %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead style="background:#0F172A;">
+        <tr style="border-bottom:1px solid #334155;">
+          <th class="text-left px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">TICKER</th>
+          <th class="text-left px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">RESULTADO</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">ENTRADA</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">SALIDA</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">SHARES</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">P&L $</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">P&L %</th>
+          <th class="text-right px-4 py-3 font-semibold tracking-wider" style="color:#64748B;">CIERRE</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in closed_trades %}
+        <tr style="border-bottom:1px solid rgba(51,65,85,0.5);">
+          <td class="px-4 py-3 font-bold text-white">{{ t.ticker.symbol }}</td>
+          <td class="px-4 py-3">
+            {% if t.status == 'CLOSED_WIN' %}
+            <span style="padding:2px 8px;border-radius:9999px;font-size:0.72em;font-weight:700;
+                         background:rgba(34,197,94,0.15);color:#22C55E;">WIN</span>
+            {% elif t.status == 'CLOSED_LOSS' %}
+            <span style="padding:2px 8px;border-radius:9999px;font-size:0.72em;font-weight:700;
+                         background:rgba(239,68,68,0.15);color:#EF4444;">LOSS</span>
+            {% else %}
+            <span style="padding:2px 8px;border-radius:9999px;font-size:0.72em;font-weight:700;
+                         background:rgba(100,116,139,0.15);color:#64748B;">MANUAL</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-right font-mono text-white">${{ t.entry_price|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono text-white">${{ t.exit_price|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right font-mono" style="color:#94A3B8;">{{ t.shares }}</td>
+          <td class="px-4 py-3 text-right font-mono font-bold"
+              style="color:{% if t.pnl_dollars >= 0 %}#22C55E{% else %}#EF4444{% endif %};">
+            {% if t.pnl_dollars >= 0 %}+{% endif %}${{ t.pnl_dollars|floatformat:2 }}
+          </td>
+          <td class="px-4 py-3 text-right font-mono"
+              style="color:{% if t.pnl_percent >= 0 %}#22C55E{% else %}#EF4444{% endif %};">
+            {% if t.pnl_percent >= 0 %}+{% endif %}{{ t.pnl_percent|floatformat:1 }}%
+          </td>
+          <td class="px-4 py-3 text-right" style="color:#475569;">{{ t.exit_date }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="px-5 py-10 text-center">
+    <p class="text-sm" style="color:#475569;">Aún no hay trades cerrados.</p>
+  </div>
+  {% endif %}
+</div>
+
+{% endif %}{# end setup_needed #}
+
+
+<!-- ══ MODALS ════════════════════════════════════════════════════════════════ -->
+
+<!-- Execute Modal -->
+<div id="executeModal" role="dialog" aria-modal="true"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     style="display:none!important;background:rgba(2,6,23,0.88);backdrop-filter:blur(6px);">
+  <div class="card w-full max-w-sm relative p-6">
+    <button onclick="closeExecuteModal()"
+            class="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer"
+            style="background:#0F172A;border:1px solid #334155;color:#64748B;">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <h2 id="execTitle" class="text-base font-bold text-white mb-1">Ejecutar Trade</h2>
+    <p id="execSubtitle" class="text-xs mb-4" style="color:#64748B;">Confirma los precios antes de ejecutar</p>
+
+    <form method="post" action="{% url 'paper_execute' %}">
+      {% csrf_token %}
+      <input type="hidden" name="symbol"   id="execSymbol">
+      <input type="hidden" name="source"   id="execSource">
+
+      <div class="space-y-3 mb-4">
+        <div>
+          <label class="block text-xs font-semibold mb-1" style="color:#94A3B8;">PRECIO DE ENTRADA</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color:#22C55E;">$</span>
+            <input type="number" name="entry_price" id="execEntry" step="0.01" min="0.01"
+                   class="form-input pl-8" required>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1" style="color:#94A3B8;">STOP LOSS</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color:#EF4444;">$</span>
+            <input type="number" name="stop_loss" id="execStop" step="0.01" min="0.01"
+                   class="form-input pl-8" required>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1" style="color:#94A3B8;">TARGET</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color:#22C55E;">$</span>
+            <input type="number" name="target_price" id="execTarget" step="0.01" min="0.01"
+                   class="form-input pl-8" required>
+          </div>
+        </div>
+      </div>
+      <div class="mb-4 rounded-lg px-4 py-3" style="background:#0F172A;border:1px solid #334155;">
+        <p class="text-xs font-semibold mb-1" style="color:#64748B;">ESTIMADO (riesgo 1%)</p>
+        <div class="flex gap-4 text-sm">
+          <div>
+            <span style="color:#64748B;">Acciones: </span>
+            <strong id="previewShares" style="color:#F8FAFC;">—</strong>
+          </div>
+          <div>
+            <span style="color:#64748B;">Capital: </span>
+            <strong id="previewCapital" style="color:#F59E0B;">—</strong>
+          </div>
+        </div>
+        <p class="text-xs mt-1" style="color:#475569;">
+          Cash disponible: <strong style="color:#22C55E;">${{ portfolio.cash_balance|floatformat:2 }}</strong>
+        </p>
+      </div>
+      <div class="flex gap-3">
+        <button type="submit" class="btn-primary flex-1 justify-center">Confirmar</button>
+        <button type="button" onclick="closeExecuteModal()" class="btn-ghost flex-1 justify-center cursor-pointer">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Close Modal -->
+<div id="closeModal" role="dialog" aria-modal="true"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     style="display:none!important;background:rgba(2,6,23,0.88);backdrop-filter:blur(6px);">
+  <div class="card w-full max-w-sm relative p-6">
+    <button onclick="closeCloseModal()"
+            class="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer"
+            style="background:#0F172A;border:1px solid #334155;color:#64748B;">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <h2 id="closeTitle" class="text-base font-bold text-white mb-4">Cerrar Trade</h2>
+    <form method="post" id="closeForm" action="">
+      {% csrf_token %}
+      <div class="mb-4">
+        <label class="block text-xs font-semibold mb-1" style="color:#94A3B8;">PRECIO DE SALIDA</label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color:#F8FAFC;">$</span>
+          <input type="number" name="exit_price" id="closePrice" step="0.01" min="0.01"
+                 class="form-input pl-8">
+        </div>
+        <p class="text-xs mt-1" style="color:#475569;">Deja en blanco para usar el precio de cierre más reciente.</p>
+      </div>
+      <div class="flex gap-3">
+        <button type="submit" class="btn-primary flex-1 justify-center"
+                style="background:#EF4444;">Cerrar Trade</button>
+        <button type="button" onclick="closeCloseModal()" class="btn-ghost flex-1 justify-center cursor-pointer">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add Funds Modal -->
+<div id="addFundsModal" role="dialog" aria-modal="true"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     style="display:none!important;background:rgba(2,6,23,0.88);backdrop-filter:blur(6px);">
+  <div class="card w-full max-w-sm relative p-6">
+    <button onclick="closeAddFundsModal()"
+            class="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer"
+            style="background:#0F172A;border:1px solid #334155;color:#64748B;">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <h2 class="text-base font-bold text-white mb-4">Añadir Fondos Virtuales</h2>
+    <form method="post" action="{% url 'paper_add_funds' %}">
+      {% csrf_token %}
+      <div class="space-y-3 mb-4">
+        <div>
+          <label class="block text-xs font-semibold mb-1" style="color:#94A3B8;">MONTO</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color:#22C55E;">$</span>
+            <input type="number" name="amount" step="0.01" min="1" placeholder="500.00"
+                   class="form-input pl-8" required>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1" style="color:#94A3B8;">NOTA (opcional)</label>
+          <input type="text" name="note" placeholder="Ej: Segunda ronda de pruebas"
+                 class="form-input">
+        </div>
+      </div>
+      <div class="flex gap-3">
+        <button type="submit" class="btn-primary flex-1 justify-center">Añadir</button>
+        <button type="button" onclick="closeAddFundsModal()" class="btn-ghost flex-1 justify-center cursor-pointer">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Position sizing — same formula as backend _calc_shares
+const CASH_BALANCE = {{ portfolio.cash_balance|default:0 }};
+function calcShares(entry, stop) {
+  const riskDollars  = CASH_BALANCE * 0.01;
+  const riskPerShare = entry - stop;
+  if (riskPerShare <= 0) return { shares: 0, capital: 0 };
+  const shares  = Math.max(1, Math.floor(riskDollars / riskPerShare));
+  const capital = Math.round(shares * entry * 100) / 100;
+  return { shares, capital };
+}
+function fmtMoney(n) {
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.signal-row').forEach(row => {
+    const entry = parseFloat(row.dataset.entry);
+    const stop  = parseFloat(row.dataset.stop);
+    const { shares, capital } = calcShares(entry, stop);
+    row.querySelector('.est-shares').textContent = shares > 0 ? shares : '—';
+    row.querySelector('.est-capital').textContent = capital > 0 ? fmtMoney(capital) : '—';
+  });
+});
+
+function showModal(id)  { document.getElementById(id).style.removeProperty('display'); }
+function hideModal(id)  { document.getElementById(id).style.display = 'none'; }
+
+function openAddFundsModal()  { showModal('addFundsModal'); }
+function closeAddFundsModal() { hideModal('addFundsModal'); }
+function closeCloseModal()    { hideModal('closeModal'); }
+
+function updateExecPreview() {
+  const entry = parseFloat(document.getElementById('execEntry').value) || 0;
+  const stop  = parseFloat(document.getElementById('execStop').value)  || 0;
+  const { shares, capital } = calcShares(entry, stop);
+  document.getElementById('previewShares').textContent  = shares  > 0 ? shares          : '—';
+  document.getElementById('previewCapital').textContent = capital > 0 ? fmtMoney(capital) : '—';
+  const warn = capital > CASH_BALANCE;
+  document.getElementById('previewCapital').style.color = warn ? '#EF4444' : '#F59E0B';
+}
+
+function openExecuteModal(symbol, source, entry, stop, target) {
+  document.getElementById('execTitle').textContent    = `Ejecutar — ${symbol}`;
+  document.getElementById('execSubtitle').textContent = `Señal: ${source.replace('_',' ')}`;
+  document.getElementById('execSymbol').value = symbol;
+  document.getElementById('execSource').value = source;
+  document.getElementById('execEntry').value  = entry;
+  document.getElementById('execStop').value   = stop;
+  document.getElementById('execTarget').value = target;
+  updateExecPreview();
+  showModal('executeModal');
+}
+function closeExecuteModal() { hideModal('executeModal'); }
+
+document.addEventListener('DOMContentLoaded', () => {
+  ['execEntry','execStop'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', updateExecPreview);
+  });
+});
+
+function openCloseModal(tradeId, symbol, currentPrice) {
+  document.getElementById('closeTitle').textContent = `Cerrar — ${symbol}`;
+  document.getElementById('closeForm').action       = `/paper/close/${tradeId}/`;
+  document.getElementById('closePrice').value       = currentPrice;
+  showModal('closeModal');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    ['executeModal','closeModal','addFundsModal'].forEach(id => {
+      document.getElementById(id).style.display = 'none';
+    });
+  }
+});
+</script>
+{% endblock %}

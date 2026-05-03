@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.db.models import Sum
 
 
 class StockList(models.Model):
@@ -234,6 +235,10 @@ class Trade(models.Model):
     class Meta:
         unique_together = ('user', 'ticker', 'analysis')
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'paper_status']),
+            models.Index(fields=['user', 'validation_status']),
+        ]
 
     def __str__(self):
         return f"{self.user.username} | {self.ticker.symbol} | {self.get_strategy_type_display()} | {self.status}"
@@ -245,3 +250,103 @@ class Trade(models.Model):
         if self.validation_status == 'WATCHLIST':
             return 'WAIT'
         return 'REJECT'
+
+
+# ─── PAPER TRADING (completely separate from Trade/TradingProfile) ─────────────
+
+class PaperPortfolio(models.Model):
+    """One virtual portfolio per user."""
+    user          = models.OneToOneField(User, on_delete=models.CASCADE, related_name='paper_portfolio')
+    cash_balance  = models.FloatField(default=0.0)   # available cash not in trades
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} paper ${self.cash_balance:,.2f}"
+
+    @property
+    def total_deposited(self):
+        return self.deposits.aggregate(s=Sum('amount'))['s'] or 0.0
+
+    @property
+    def open_trades_value(self):
+        total = 0.0
+        for t in self.trades.filter(status='OPEN'):
+            p = t.ticker.latest_price()
+            if p:
+                total += p.close * t.shares
+        return total
+
+    @property
+    def total_value(self):
+        return self.cash_balance + self.open_trades_value
+
+    @property
+    def total_pnl(self):
+        return self.total_value - self.total_deposited
+
+
+class PaperDeposit(models.Model):
+    """Each time the user adds virtual funds."""
+    portfolio  = models.ForeignKey(PaperPortfolio, on_delete=models.CASCADE, related_name='deposits')
+    amount     = models.FloatField()
+    note       = models.CharField(max_length=100, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"+${self.amount:,.2f} → {self.portfolio.user.username}"
+
+
+class PaperTrade(models.Model):
+    """A paper trade executed by the user based on a signal."""
+    STATUS_CHOICES = [
+        ('OPEN',          'Open'),
+        ('CLOSED_WIN',    'Closed — Win'),
+        ('CLOSED_LOSS',   'Closed — Loss'),
+        ('CLOSED_MANUAL', 'Closed — Manual'),
+    ]
+    SOURCE_CHOICES = [
+        ('BUY_SIGNAL',   'BUY Signal'),
+        ('READY_TO_BUY', 'Ready to Buy'),
+        ('MANUAL',       'Manual'),
+    ]
+
+    portfolio    = models.ForeignKey(PaperPortfolio, on_delete=models.CASCADE, related_name='trades')
+    ticker       = models.ForeignKey(Ticker, on_delete=models.CASCADE, related_name='paper_trades')
+    source       = models.CharField(max_length=15, choices=SOURCE_CHOICES, default='BUY_SIGNAL')
+    # Entry
+    entry_price  = models.FloatField()
+    shares       = models.IntegerField()
+    stop_loss    = models.FloatField()
+    target_price = models.FloatField()
+    capital_used = models.FloatField()          # entry_price * shares
+    entry_date   = models.DateField(auto_now_add=True)
+    # Exit
+    status       = models.CharField(max_length=15, choices=STATUS_CHOICES, default='OPEN')
+    exit_price   = models.FloatField(null=True, blank=True)
+    exit_date    = models.DateField(null=True, blank=True)
+    pnl_dollars  = models.FloatField(null=True, blank=True)
+    pnl_percent  = models.FloatField(null=True, blank=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['portfolio', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.portfolio.user.username} | {self.ticker.symbol} | {self.status}"
+
+    @property
+    def current_price(self):
+        p = self.ticker.latest_price()
+        return p.close if p else self.entry_price
+
+    @property
+    def unrealized_pnl(self):
+        return round((self.current_price - self.entry_price) * self.shares, 2)
+
+    @property
+    def unrealized_pnl_pct(self):
+        return round((self.current_price - self.entry_price) / self.entry_price * 100, 2)

@@ -14,14 +14,15 @@ Crontab example (every weekday at 5:00 PM Eastern — after market close):
 
 import threading
 import logging
-from datetime import date as today_date
+from datetime import date as today_date, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
-from django.db import connection
+from django.db import connection, close_old_connections
+from django.db.models import Prefetch
 
-from stocks.models import Ticker, Watchlist, Trade, AccumulationSignal
+from stocks.models import Ticker, Watchlist, Trade, AccumulationSignal, TickerAnalysis
 from stocks.analysis import run_analysis_for_ticker
 from stocks.accumulation import analyze_accumulation_for_ticker
 from stocks.services.trade_engine import generate_trade_plan
@@ -36,6 +37,29 @@ def _log(stdout, style_fn, msg):
     with _print_lock:
         stdout.write(style_fn(msg) if style_fn else msg)
         stdout.flush()
+
+
+def _accumulate_one(ticker_id, force, stdout):
+    """Worker: runs accumulation scan for one ticker in a thread."""
+    result = {'ticker_id': ticker_id, 'symbol': '?', 'signal': None, 'ok': False}
+    try:
+        ticker = Ticker.objects.get(id=ticker_id)
+        result['symbol'] = ticker.symbol
+        signal = analyze_accumulation_for_ticker(ticker, force=force)
+        result['ok'] = True
+        if signal:
+            result['signal'] = signal
+            _log(stdout, None,
+                 f'  ACCUM {ticker.symbol:<10} score={signal.score}  '
+                 f'RSI={signal.rsi:.1f}  SMA200 {signal.dist_from_sma200_pct:+.1f}%  '
+                 f'{signal.notes}\n')
+    except Exception as exc:
+        _log(stdout, None, f'  accum error {ticker_id}: {exc}\n')
+        logger.warning('accumulation scan failed ticker_id=%s: %s', ticker_id, exc)
+        result['error'] = str(exc)
+    finally:
+        connection.close()
+    return result
 
 
 def _analyze_one(ticker_id, force, index, total, stdout):
@@ -101,8 +125,8 @@ class Command(BaseCommand):
             help='Re-analyze even if already done today',
         )
         parser.add_argument(
-            '--workers', type=int, default=10, metavar='N',
-            help='Number of parallel threads (default: 10)',
+            '--workers', type=int, default=50, metavar='N',
+            help='Number of parallel threads (default: 50)',
         )
         parser.add_argument(
             '--no-email', action='store_true',
@@ -160,25 +184,26 @@ class Command(BaseCommand):
             f'\nAnalysis done — OK:{success}  skipped:{skipped}  errors:{errors}\n'
         )
 
-        # ── 4. Accumulation zone scan (DB-only, fast) ─────────────────────────
-        self.stdout.write('\n--- Accumulation Zone Scan ---\n')
-        acc_found = acc_errors = 0
+        # ── 4. Accumulation zone scan — parallel (same thread pool size) ────────
+        # close_old_connections() resets the main-thread connection that may have
+        # been dropped by the server while the analysis pool was running.
+        close_old_connections()
 
-        for ticker_id in ticker_ids:
-            try:
-                ticker = Ticker.objects.get(id=ticker_id)
-                signal = analyze_accumulation_for_ticker(ticker, force=force)
-                if signal:
-                    self.stdout.write(
-                        f'  ACCUM {ticker.symbol:<10} score={signal.score}  '
-                        f'RSI={signal.rsi:.1f}  SMA200 {signal.dist_from_sma200_pct:+.1f}%  '
-                        f'{signal.notes}\n'
-                    )
+        self.stdout.write(f'\n--- Accumulation Zone Scan ({workers} threads) ---\n')
+        acc_found = acc_errors = 0
+        acc_futures = {}
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for ticker_id in ticker_ids:
+                future = pool.submit(_accumulate_one, ticker_id, force, self.stdout)
+                acc_futures[future] = ticker_id
+
+            for future in as_completed(acc_futures):
+                res = future.result()
+                if res.get('signal'):
                     acc_found += 1
-            except Exception as exc:
-                self.stdout.write(f'  accum error {ticker_id}: {exc}\n')
-                logger.warning('accumulation scan failed ticker_id=%s: %s', ticker_id, exc)
-                acc_errors += 1
+                elif not res.get('ok'):
+                    acc_errors += 1
 
         self.stdout.write(f'Accumulation — signals:{acc_found}  errors:{acc_errors}\n')
 
@@ -187,6 +212,7 @@ class Command(BaseCommand):
             self.stdout.write('Email skipped (--no-email).\n')
             return
 
+        close_old_connections()  # fresh connection before email queries
         self.stdout.write('\nSending email reports...\n')
         users_with_email = (
             User.objects
@@ -198,40 +224,67 @@ class Command(BaseCommand):
             .distinct()
         )
 
+        # Pre-load today's accumulation signals in ONE query (all tickers, all users)
+        today = today_date.today()
+        recent = today - timedelta(days=365)
+        all_accum = {
+            sig.ticker_id: sig
+            for sig in AccumulationSignal.objects.filter(date=today)
+        }
+
         sent = email_errors = 0
         for user in users_with_email:
             try:
-                # Analysis rows
-                analysis_rows = [
-                    {'ticker': e.ticker, 'analysis': e.ticker.latest_analysis()}
-                    for e in Watchlist.objects.filter(user=user).select_related('ticker')
-                ]
+                # Analysis rows — Prefetch avoids N+1 (1 query per user, not N)
+                entries = list(
+                    Watchlist.objects
+                    .filter(user=user)
+                    .select_related('ticker', 'stock_list')
+                    .prefetch_related(
+                        Prefetch(
+                            'ticker__analyses',
+                            queryset=TickerAnalysis.objects.filter(
+                                date__gte=recent
+                            ).order_by('-date'),
+                            to_attr='_recent_analyses',
+                        )
+                    )
+                )
+                analysis_rows = []
+                for e in entries:
+                    a = e.ticker._recent_analyses
+                    analysis_rows.append({
+                        'ticker':   e.ticker,
+                        'analysis': a[0] if a else None,
+                    })
 
-                # Latest trade per ticker
+                # Latest trade per ticker — values_list avoids loading full objects
                 seen = set()
-                latest_trades = []
-                for trade in (
+                latest_ids = []
+                for t_id, ticker_id in (
                     Trade.objects
                     .filter(user=user)
-                    .select_related('ticker', 'analysis')
                     .order_by('-created_at')
+                    .values_list('id', 'ticker_id')
                 ):
-                    if trade.ticker_id not in seen:
-                        seen.add(trade.ticker_id)
-                        latest_trades.append(trade)
+                    if ticker_id not in seen:
+                        seen.add(ticker_id)
+                        latest_ids.append(t_id)
+                latest_trades = list(
+                    Trade.objects
+                    .filter(id__in=latest_ids)
+                    .select_related('ticker', 'analysis')
+                )
                 latest_trades.sort(key=lambda t: (-t.rr_ratio, -t.confidence_score))
 
-                # Accumulation rows for this user's watchlist
+                # Accumulation rows — use pre-loaded dict, zero extra queries
                 acc_rows = []
-                for entry in Watchlist.objects.filter(user=user).select_related('ticker'):
-                    sig = AccumulationSignal.objects.filter(
-                        ticker=entry.ticker,
-                        date=today_date.today(),
-                    ).first()
+                for e in entries:
+                    sig = all_accum.get(e.ticker_id)
                     if sig:
                         acc_rows.append({
-                            'symbol':      entry.ticker.symbol,
-                            'list_name':   entry.list_name,
+                            'symbol':      e.ticker.symbol,
+                            'list_name':   e.list_name,
                             'signal_type': sig.signal_type,
                             'price':       sig.price,
                             'rsi':         sig.rsi,

@@ -6,7 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse
 from django.core.paginator import Paginator
-from django.db.models import Max, Min
+from django.db.models import Max, Min, Sum, Prefetch
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 from .models import Ticker, Watchlist, TickerAnalysis, StockList, Trade, TradingProfile
@@ -33,11 +33,20 @@ def dashboard(request):
 
     active_list = None
 
+    # Prefetch the latest analysis per ticker — 1 query for all tickers (vs N+1)
+    # 365-day window ensures we always show any existing analysis regardless of age
+    recent = date.today() - timedelta(days=365)
     qs = (
         Watchlist.objects
         .filter(user=request.user)
         .select_related('ticker', 'stock_list')
-        .prefetch_related('ticker__analyses')
+        .prefetch_related(
+            Prefetch(
+                'ticker__analyses',
+                queryset=TickerAnalysis.objects.filter(date__gte=recent).order_by('-date'),
+                to_attr='_recent_analyses',
+            )
+        )
         .order_by('ticker__symbol')
     )
 
@@ -62,7 +71,8 @@ def dashboard(request):
     buy_count = watch_count = no_buy_count = 0
 
     for entry in qs:
-        analysis = entry.ticker.latest_analysis()
+        analyses = entry.ticker._recent_analyses
+        analysis = analyses[0] if analyses else None
         all_rows.append({'entry': entry, 'ticker': entry.ticker, 'analysis': analysis})
         if analysis:
             if analysis.signal == 'BUY':
@@ -269,9 +279,23 @@ def _finish_analyze_all_job(request, job):
 def _send_analysis_report_if_enabled(user):
     profile, _ = TradingProfile.objects.get_or_create(user=user)
     if user.email and profile.send_analysis_email:
+        recent = date.today() - timedelta(days=365)
+        entries = (
+            Watchlist.objects
+            .filter(user=user)
+            .select_related('ticker')
+            .prefetch_related(
+                Prefetch(
+                    'ticker__analyses',
+                    queryset=TickerAnalysis.objects.filter(date__gte=recent).order_by('-date'),
+                    to_attr='_recent_analyses',
+                )
+            )
+        )
         analysis_rows = []
-        for entry in Watchlist.objects.filter(user=user).select_related('ticker'):
-            analysis = entry.ticker.latest_analysis()
+        for entry in entries:
+            analyses = entry.ticker._recent_analyses
+            analysis = analyses[0] if analyses else None
             analysis_rows.append({'ticker': entry.ticker, 'analysis': analysis})
 
         # Latest trade plan per ticker (Python-level dedup, avoids SQLite timestamp issues)
@@ -366,19 +390,27 @@ def trade_plans(request):
 
     val_filter = request.GET.get('status', '')   # VALID / WATCHLIST / INVALID / ''
 
-    # Latest trade per ticker (Python dedup — avoids SQLite timestamp issues)
+    # Latest trade per ticker — fetch only id+ticker_id to avoid loading full objects
     seen_tickers = set()
     latest_ids   = []
-    for trade in Trade.objects.filter(user=request.user).order_by('-created_at'):
-        if trade.ticker_id not in seen_tickers:
-            seen_tickers.add(trade.ticker_id)
-            latest_ids.append(trade.id)
+    for t_id, ticker_id in (
+        Trade.objects
+        .filter(user=request.user)
+        .order_by('-created_at')
+        .values_list('id', 'ticker_id')
+    ):
+        if ticker_id not in seen_tickers:
+            seen_tickers.add(ticker_id)
+            latest_ids.append(t_id)
 
-    all_latest     = Trade.objects.filter(id__in=latest_ids).select_related('ticker', 'analysis')
-    valid_count    = all_latest.filter(validation_status='VALID').count()
-    watchlist_count= all_latest.filter(validation_status='WATCHLIST').count()
-    invalid_count  = all_latest.filter(validation_status='INVALID').count()
-    total_risk     = sum(t.risk_amount for t in all_latest.filter(validation_status='VALID'))
+    all_latest      = Trade.objects.filter(id__in=latest_ids).select_related('ticker', 'analysis')
+    valid_count     = all_latest.filter(validation_status='VALID').count()
+    watchlist_count = all_latest.filter(validation_status='WATCHLIST').count()
+    invalid_count   = all_latest.filter(validation_status='INVALID').count()
+    total_risk      = (
+        all_latest.filter(validation_status='VALID')
+        .aggregate(s=Sum('risk_amount'))['s'] or 0
+    )
 
     qs = all_latest
     if val_filter in ('VALID', 'WATCHLIST', 'INVALID'):
@@ -412,19 +444,19 @@ def trade_plans(request):
 def performance(request):
     profile, _ = TradingProfile.objects.get_or_create(user=request.user)
 
-    all_trades = list(
-        Trade.objects
-        .filter(user=request.user)
+    base_qs = Trade.objects.filter(user=request.user)
+
+    # DB-level counts — no Python iteration needed
+    pending_count = base_qs.filter(paper_status='PENDING', validation_status='VALID').count()
+    active_count  = base_qs.filter(paper_status='ACTIVE').count()
+
+    closed_trades = list(
+        base_qs
+        .filter(paper_status='CLOSED')
         .select_related('ticker')
         .order_by('exit_date')
     )
-
-    # Counts by paper_status
-    pending_count = sum(1 for t in all_trades if t.paper_status == 'PENDING' and t.validation_status == 'VALID')
-    active_count  = sum(1 for t in all_trades if t.paper_status == 'ACTIVE')
-    closed_count  = sum(1 for t in all_trades if t.paper_status == 'CLOSED')
-
-    closed_trades = [t for t in all_trades if t.paper_status == 'CLOSED']
+    closed_count = len(closed_trades)
 
     # Overall metrics
     metrics = compute_metrics(closed_trades)

@@ -405,3 +405,117 @@ def send_analysis_report_email(user, analysis_rows, trade_plans, accumulation_ro
         html_message=html_body,
         fail_silently=False,
     )
+
+
+def send_paper_monitor_email(user, closed_trades: list, check_date):
+    """
+    Email sent by monitor_paper_trades after trades are auto-closed.
+    closed_trades: list of dicts with keys:
+        symbol, status, pnl, pnl_pct, entry_price, exit_price, shares, capital, cash_now
+    """
+    if not user.email or not closed_trades:
+        return
+
+    date_str     = check_date.strftime('%B %d, %Y')
+    display_name = user.get_full_name() or user.username
+    wins         = [t for t in closed_trades if t['status'] == 'CLOSED_WIN']
+    losses       = [t for t in closed_trades if t['status'] != 'CLOSED_WIN']
+    total_pnl    = sum(t['pnl'] for t in closed_trades)
+    th = "padding:8px 12px;color:#64748B;font-weight:600;font-size:0.75em;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;"
+
+    rows_html = ''
+    for t in sorted(closed_trades, key=lambda x: -x['pnl']):
+        is_win      = t['status'] == 'CLOSED_WIN'
+        pnl         = t['pnl']
+        pnl_color   = '#22C55E' if pnl >= 0 else '#EF4444'
+        status_html = (
+            '<span style="padding:2px 7px;border-radius:9999px;font-size:0.72em;font-weight:800;'
+            'background:rgba(34,197,94,0.15);color:#22C55E;">WIN</span>'
+            if is_win else
+            '<span style="padding:2px 7px;border-radius:9999px;font-size:0.72em;font-weight:700;'
+            'background:rgba(239,68,68,0.12);color:#EF4444;">LOSS</span>'
+        )
+        sign = '+' if pnl >= 0 else ''
+        rows_html += f"""
+      <tr style="border-bottom:1px solid #1E293B;">
+        <td style="padding:8px 12px;font-weight:700;color:#F8FAFC;">{t['symbol']}</td>
+        <td style="padding:8px 12px;">{status_html}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:monospace;color:#94A3B8;">${t['entry_price']:.2f}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:monospace;font-weight:700;color:{pnl_color};">${t['exit_price']:.2f}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:monospace;color:#94A3B8;">{t['shares']}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:monospace;font-weight:700;color:{pnl_color};">{sign}${pnl:,.2f}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:monospace;color:{pnl_color};">{sign}{t['pnl_pct']:.1f}%</td>
+        <td style="padding:8px 12px;text-align:right;font-family:monospace;color:#94A3B8;">${t['cash_now']:,.2f}</td>
+      </tr>"""
+
+    total_color = '#22C55E' if total_pnl >= 0 else '#EF4444'
+    total_sign  = '+' if total_pnl >= 0 else ''
+
+    table_html = f"""
+    <table style="width:100%;border-collapse:collapse;font-size:0.83em;">
+      <thead style="background:#0F172A;">
+        <tr>
+          <th style="{th}text-align:left;">Ticker</th>
+          <th style="{th}text-align:left;">Result</th>
+          <th style="{th}text-align:right;">Entry</th>
+          <th style="{th}text-align:right;">Exit</th>
+          <th style="{th}text-align:right;">Shares</th>
+          <th style="{th}text-align:right;">P&L $</th>
+          <th style="{th}text-align:right;">P&L %</th>
+          <th style="{th}text-align:right;">Cash Left</th>
+        </tr>
+      </thead>
+      <tbody>{rows_html}</tbody>
+    </table>"""
+
+    html_body = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#020617;font-family:'Segoe UI',Arial,sans-serif;color:#F8FAFC;">
+<div style="max-width:760px;margin:0 auto;padding:28px 16px;">
+<div style="background:#1E293B;border:1px solid #334155;border-radius:12px;overflow:hidden;">
+
+  <div style="padding:22px 28px;border-bottom:1px solid #334155;background:rgba(34,197,94,0.07);">
+    <span style="font-size:1.3em;font-weight:800;">Stock<span style="color:#22C55E;">Analyzer</span></span>
+    <p style="margin:4px 0 0;font-size:0.85em;color:#94A3B8;">Paper Portfolio — Trade Monitor — {date_str}</p>
+  </div>
+
+  <div style="padding:18px 28px;border-bottom:1px solid #334155;">
+    <p style="margin:0 0 4px;font-size:0.95em;">Hi {display_name},</p>
+    <p style="margin:0;font-size:0.85em;color:#94A3B8;">
+      <strong style="color:#22C55E;">{len(wins)} WIN</strong>
+      &nbsp;·&nbsp;
+      <strong style="color:#EF4444;">{len(losses)} LOSS</strong>
+      &nbsp;·&nbsp;
+      Total P&amp;L: <strong style="color:{total_color};">{total_sign}${total_pnl:,.2f}</strong>
+    </p>
+  </div>
+
+  <div style="padding:20px 16px 8px;">
+    <p style="padding:0 0 10px;font-size:0.78em;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.08em;">
+      Trades Closed Today ({len(closed_trades)})
+    </p>
+    <div style="overflow-x:auto;">{table_html}</div>
+  </div>
+
+  <div style="padding:16px 28px;margin-top:8px;border-top:1px solid #334155;background:#0F172A;">
+    <p style="margin:0;font-size:0.75em;color:#475569;">
+      Auto-closed by price monitor · Stop loss / target hit ·
+      Generated by StockAnalyzer · Not financial advice
+    </p>
+  </div>
+
+</div>
+</div>
+</body>
+</html>"""
+
+    sign_subject = f'{total_sign}${total_pnl:,.2f}'
+    send_mail(
+        subject=f'[StockAnalyzer] Paper Trades Closed — {len(wins)}W/{len(losses)}L  {sign_subject} — {date_str}',
+        message=f'StockAnalyzer paper monitor {date_str}: {len(wins)} wins, {len(losses)} losses, P&L {total_sign}${total_pnl:,.2f}.',
+        from_email=None,
+        recipient_list=[user.email],
+        html_message=html_body,
+        fail_silently=False,
+    )

@@ -7,4 +7,5 @@ urlpatterns = [
     path('', RedirectView.as_view(url='/dashboard/', permanent=False)),
     path('', include('users.urls')),
     path('', include('stocks.urls')),
+    path('paper/', include('stocks.urls_paper')),
 ]
